@@ -1,0 +1,116 @@
+#! /bin/bash
+
+# Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH
+#
+# Author: Roberto Sassu <roberto.sassu@huawei.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, version 2 of the
+# License.
+#
+# File: setup_ima_digest_list
+#      Configure digest lists
+
+set -f
+
+function usage() {
+    echo "Usage: $0 initial|immutable|mutable [options]"
+    echo "Options:"
+    echo -e "\t-d <directory>: directory where digest lists and metadata are stored"
+    echo -e "\t-e <algorithm>: digest algorithm"
+    echo -e "\t-a: append metadata"
+}
+
+if [ "$1" != "initial" ] && [ "$1" != "immutable" ] && [ "$1" != "mutable" ]; then
+    usage
+    exit 1
+fi
+
+OPTIND=2
+digest_lists_dir="/etc/ima/digest_lists"
+algorithm="sha256"
+gen_digest_lists_result=0
+
+while getopts "h?d:e:a" opt; do
+    case "$opt" in
+    h|\?)
+        usage
+        exit 0
+        ;;
+    d)  digest_lists_dir=$OPTARG
+        ;;
+    e)  algorithm=$OPTARG
+        ;;
+    a)  gen_digest_lists_opt="-a"
+        ;;
+    esac
+done
+
+if [ -z "$gen_digest_lists_opt" ] && [ -d "$digest_lists_dir" ]; then
+    ls_output=$(ls $digest_lists_dir)
+    if [ -n "$ls_output" ]; then
+        echo "$digest_lists_dir not empty, files will be overwritten. Do you want to continue? [y/N]"
+        read answer
+
+        if [ "$answer" != "y" ]; then
+            echo "Exiting."
+            exit 0
+        fi
+    fi
+else
+    mkdir -p $digest_lists_dir
+fi
+
+if [ "$1" = "initial" ]; then
+    # generate digest lists from RPM database
+    echo "Generate initial digest list from RPM database"
+    gen_digest_lists $gen_digest_lists_opt -e $algorithm -d $digest_lists_dir -o rpm
+    gen_digest_lists_result=$?
+elif [ "$1" = "immutable" ]; then
+    filename="$digest_lists_dir/unknown_digests_immutable"
+    find_opt="! -path /var/* ! -path /boot/*"
+    awk_opt='$5 !~ /^\/var/'
+elif [ "$1" = "mutable" ]; then
+    # required if root filesystem is mounted as read-only
+    mount -t tmpfs none /var/tmp
+    cp -a /etc/ima/digest_lists /var/tmp
+    mount -t tmpfs none /etc/ima/digest_lists
+    cp -a /var/tmp/digest_lists /etc/ima
+
+    filename="/etc/ima/digest_lists/unknown_digests_mutable"
+    gen_digest_lists_opt="$gen_digest_lists_opt -w"
+    awk_opt='{print $0}'
+fi
+
+if [ -n "$filename" ]; then
+    # find unknown files in the root filesystem
+    echo "Read files from / and /boot"
+    find / /boot -xdev -type f -uid 0 $find_opt -exec head -c0 \{} \;
+
+    # create an ASCII file containing the digests of unknown measurements
+    echo "Create $filename with digests of unknown files"
+    cat /sys/kernel/security/ima/ascii_runtime_measurements | awk "$awk_opt" | \
+        awk '$4 != "sha1:0000000000000000000000000000000000000000" {print $4, $5}' > $filename
+
+    # edit the list of unknown digests
+    vi $filename
+
+    # create a digest list with the digest of immutable or mutable files
+    echo "Generate compact list from $filename"
+    gen_digest_lists -e $algorithm -d /etc/ima/digest_lists -f ascii -i $filename $gen_digest_lists_opt
+    gen_digest_lists_result=$?
+fi
+
+if [ $gen_digest_lists_result -eq 0 ]; then
+    # update initial ram disk
+    echo "Update initial ram disk"
+    dracut -f -i /etc/ima /etc/ima
+fi
+
+if [ "$1" = "mutable" ]; then
+    umount /var/tmp
+    umount /etc/ima/digest_lists
+fi
+
+set +f
