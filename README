@@ -1,0 +1,143 @@
+======
+README
+======
+
+IMA Boot-time Configuration
+===========================
+
+This section explains how to generate digest lists and how to include them into
+an initial ram disk, so that generated digest lists are loaded early in the boot
+process.
+
+Measurement
+-----------
+
+Follow these steps to create digest lists from installed packages:
+
+1) execute setup_ima_digest_list
+
+# setup_ima_digest_list initial -e <value of ima_hash kernel parameter>
+
+This command creates a file containing the RPM header for each installed package
+and writes them to /etc/ima/digest_lists. Metadata are saved to
+/etc/ima/digest_lists/metadata. If the RPM database is not available, digest
+lists can be generated directly from the measurement list. Follow the steps
+below, for generating the digest list of immutable and mutable files (the -a
+option of setup_ima_digest_list can be removed for immutable files).
+
+2) edit the bootloader configuration file and add 'ima_policy=tcb' to the kernel
+   command line
+
+3) reboot
+
+After reboot, the measurement list will contain only unknown files. It is
+possible to create the initial digest list without the RPM database with the
+steps below. The initial digest list will be created from the measurement list.
+
+
+Follow these steps to add an additional digest list with digests of immutable
+files:
+
+1) execute setup_ima_digest_list
+
+# setup_ima_digest_list immutable -a -e <value of ima_hash kernel parameter>
+
+This command reads files from the root filesystem, so that IMA creates a new
+measurement entry if the calculate digest is not included in the currently
+loaded digest lists. Afterwards, the vi editor is automatically opened so that
+users can select the digests to include in the new digest list. The new list
+will be saved to /etc/ima/digest_lists/compact-unknown_digests_immutable, and a
+new record will be added to /etc/ima/digest_lists/metadata.
+
+2) reboot
+
+
+
+Appraisal
+---------
+
+To enable appraisal with digest list, it is necessary to mount the filesystem
+as read-only, to calculate the correct digest of mutable files. Otherwise, if
+those files are written before reboot, IMA will deny access to them, because the
+new digest will not be found.
+
+1) copy /etc/fstab to /etc/fstab.orig
+
+2) edit /etc/fstab and add 'ro' mount option for the root filesystem
+
+3) remove security.ima and security.evm extended attributes
+
+# find / -xdev -uid 0 -type f -exec attr -S -r ima 2> /dev/null \{} \;
+
+# find / -xdev -uid 0 -type f -exec attr -S -r evm 2> /dev/null \{} \;
+
+4) reboot
+
+5) execute setup_ima_digest_list
+
+# setup_ima_digest_list mutable -a -e <value of ima_hash kernel parameter>
+
+This command reads files in / and /boot. Since the initial and immutable digest
+lists have been loaded, IMA creates a new measurement entry for each mutable
+file. The user can select the digests after the vi editor is opened, and a new
+digest list is saved to /etc/ima/digest_lists/compact-unknown_digests_mutable.
+/etc/ima/digest_lists/metadata is also updated.
+
+6) edit the bootloader configuration file and add 'ima_policy=appraise_tcb
+   evm_xattrs=security.ima' to the kernel command line
+
+7) reboot
+
+8) remount the root filesystem as read-write
+
+# mount -o remount,rw /
+
+9) restore the original /etc/fstab
+
+10) reboot
+
+'evm_xattrs=security.ima' should be used only if no additional metadata should
+be protected by EVM. If it has been specified, security.ima will be created only
+for mutable files. Otherwise, they will be created also for immutable files.
+
+
+
+
+IMA Run-time Configuration
+==========================
+
+This section explains how to generate additional digest lists and how to upload
+them to IMA, when the system is running.
+
+Generation
+----------
+
+Digest lists can be generated with the gen_digest_lists tool. A description of
+this command can be found in docs/gen_digest_lists.txt.
+
+
+
+Upload
+------
+
+After digest lists have been generated, they can be uploaded by writing the path
+of digest list metadata to /sys/kernel/security/ima/digest_lists. For example:
+
+echo "/etc/ima/digest_lists/metadata" > /sys/kernel/security/ima/digest_lists
+
+
+
+Digest List Integrity Verification
+==================================
+
+The measurement list, after loading the digest lists will look like:
+
+10 <template digest> ima-ng sha1:<digest> boot_aggregate
+10 <template digest> ima-ng sha1:<digest> /etc/ima/digest_lists/metadata
+<measurement entries for modified mutable files>
+
+An attestation server can use the verify_digest_lists tool to verify the
+integrity of metadata and digest lists. For example, it can execute:
+
+$ verify_digest_lists -d /etc/ima/digest_lists -m metadata -e sha256 \
+                      -i <metadata digest>

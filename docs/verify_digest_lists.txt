@@ -1,0 +1,52 @@
+verify_digest_lists
+===================
+
+verify_digest_lists
+-------------------
+
+verify_digest_lists - verify integrity of digest lists metadata and digest lists
+
+
+SYNOPSIS
+--------
+
+verify_digest_lists [options]
+
+
+DESCRIPTION
+-----------
+
+verify_digest_lists can be used to verify the integrity of digest lists.
+
+
+OPTIONS
+-------
+
+-d <directory>: directory where digest lists and metadata are stored
+                (default: current directory)
+-m <file name>: metadata file name (default: metadata)
+-i <digest>: expected metadata digest
+-h: display help
+-e <algorithm>: digest algorithm
+
+
+EXAMPLES
+--------
+
+Verify digest lists metadata and digest list stored in /etc/ima/digest_lists.
+
+$ verify_digest_lists -d /etc/ima/digest_lists -m metadata -e sha256 \
+                      -i <metadata digest>
+
+
+AUTHOR
+------
+
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+-------
+
+Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH. Free use of this
+software is granted under the terms of the GNU Public License (GPL).
