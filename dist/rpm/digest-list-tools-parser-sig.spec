@@ -37,7 +37,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %changelog
 
-* Wed Apr 04 2018 Roberto Sassu <roberto.sassu@huawei.com> - 0.2
+* Thu Apr 05 2018 Roberto Sassu <roberto.sassu@huawei.com> - 0.2
 - PGP signatures
 - Multiple digest algorithms
 - User space digest list parser

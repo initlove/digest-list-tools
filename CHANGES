@@ -1,3 +1,10 @@
+2018-04-05  Roberto Sassu <roberto.sassu@huawei.com>
+	version 0.2
+	* PGP signatures
+	* Multiple digest algorithms
+	* User space digest list parser
+	* DEB package format
+
 2017-11-15  Roberto Sassu <roberto.sassu@huawei.com>
 	version 0.1
 	* first public release
