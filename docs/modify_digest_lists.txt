@@ -1,13 +1,13 @@
 NAME
-verify_digest_lists - verify integrity of digest list metadata and digest lists
+modify_digest_lists - modify digest list metadata
 
 
 SYNOPSIS
-verify_digest_lists [options]
+modify_digest_lists [options]
 
 
 DESCRIPTION
-verify_digest_lists can be used to verify the integrity of digest lists.
+modify_digest_lists can be used to modify digest list metadata.
 
 
 OPTIONS
@@ -16,18 +16,23 @@ OPTIONS
 
 -m <file name>: metadata file name (default: metadata)
 
--i <digest>: expected metadata digest
-
 -h: display help
 
 -e <algorithm>: digest algorithm
 
+-r <entry ID>: ID of the entry to remove
+
+-s: set ima_algo extended attribute
+
 
 EXAMPLES
-Verify digest list metadata and digest list stored in /etc/ima/digest_lists.
+Display digest list metadata and digest list stored in /etc/ima/digest_lists.
 
-# verify_digest_lists -d /etc/ima/digest_lists -m metadata -e sha256 \
-                      -i <metadata digest>
+# modify_digest_lists -d /etc/ima/digest_lists
+
+Remove entry #1 from digest list metadata
+
+# modify_digest_lists -d /etc/ima/digest_lists -r 1
 
 
 AUTHOR

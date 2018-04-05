@@ -20,13 +20,17 @@
 
 #include "kernel_lib.h"
 
-#define MAX_FILENAME_LENGTH 256
+#define MAX_PATH_LENGTH 2048
 
-extern char *digest_list_path;
+extern char *digest_lists_dir_path;
+extern int parse_metadata, remove_file, set_ima_algo;
 
 int calc_digest(u8 *digest, void *data, int len, enum hash_algo algo);
-int calc_file_digest(char *path, u8 *digest, enum hash_algo algo);
-int kernel_read_file_from_path(const char *path, void **buf, loff_t *size,
-			       loff_t max_size, enum kernel_read_file_id id);
+int calc_file_digest(u8 *digest, char *path, enum hash_algo algo);
+int check_digest(void *data, int len, char *path,
+		 enum hash_algo algo, u8 *input_digest);
+int read_file_from_path(const char *path, void **buf, loff_t *size);
+ssize_t write_check(int fd, const void *buf, size_t count);
+void hexdump(u8 *buf, int len);
 
 #endif /* _LIB_H */

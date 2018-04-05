@@ -3,4 +3,5 @@ noinst_HEADERS = kernel_lib.h \
 		 compact_list.h \
 		 rpm.h \
 		 metadata.h \
-		 lib.h
+		 lib.h \
+		 pgp.h

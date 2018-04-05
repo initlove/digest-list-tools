@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017,2018 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -16,106 +16,61 @@
 #include <fcntl.h>
 
 #include "metadata.h"
+#include "compact_list.h"
+#include "rpm.h"
+#include "deb.h"
 
-static int digest_list_from_rpmdb(char *outdir, char *metadata_filename,
-				  enum digest_data_types output_fmt)
+static int write_digest_lists(char *outdir, char *metadata_filename,
+			      int add_metadata, enum input_formats input_fmt,
+			      char *input_path,
+			      enum digest_data_sub_types output_fmt,
+			      int is_mutable, int sign, char *gpg_key_name,
+			      char *distro, char *repo_url)
 {
-	rpmts ts = NULL;
-	Header hdr;
-	rpmdbMatchIterator mi;
+	char metadata_path[MAX_PATH_LENGTH];
 	int ret;
 
-	ts = rpmtsCreate();
-	ret = rpmReadConfigFiles(NULL, NULL);
-	if (ret != RPMRC_OK) {
-		rpmlog(RPMLOG_NOTICE, "Unable to read RPM configuration.\n");
-		exit(1);
-	}
-
-	mi = rpmtsInitIterator(ts, RPMDBI_PACKAGES, NULL, 0);
-	while ((hdr = rpmdbNextIterator(mi)) != NULL) {
-		hdr = headerLink(hdr);
-
-		ret = write_digests_and_metadata(hdr, outdir, metadata_filename,
-						 INPUT_FMT_RPMDB, NULL,
-						 output_fmt, 0);
-		if (ret < 0)
-			break;
-
-		headerFree(hdr);
-	}
-
-	rpmdbFreeIterator(mi);
-	rpmtsFree(ts);
-	return ret;
-}
-
-int digest_lists_from_rpmpkg(char *outdir, char *metadata_filename,
-			     char *package_path,
-			     enum digest_data_types output_fmt)
-{
-	Header hdr;
-	rpmts ts = NULL;
-	FD_t fd;
-	int ret;
-
-	fd = Fopen(package_path, "r.ufdio");
-	if ((!fd) || Ferror(fd)) {
-		rpmlog(RPMLOG_NOTICE, "Failed to open package file (%s)\n",
-		       Fstrerror(fd));
-		if (fd)
-			Fclose(fd);
-
-		return -EINVAL;
-	}
-
-	ret = rpmReadPackageFile(ts, fd, package_path, &hdr);
-	if (ret != RPMRC_OK) {
-		rpmlog(RPMLOG_NOTICE, "Could not read package file\n");
-			Fclose(fd);
-			exit(1);
-	}
-
-	Fclose(fd);
-	ret = write_digests_and_metadata(hdr, outdir, metadata_filename,
-					 INPUT_FMT_RPMPKG, NULL, output_fmt, 0);
-	rpmtsFree(ts);
-	return ret;
-}
-
-int write_digest_lists(char *outdir, char *metadata_filename,
-		       int add_metadata, enum input_formats input_fmt,
-		       char *input_filename, enum digest_data_types output_fmt,
-		       int is_mutable)
-{
-	char filename[MAX_FILENAME_LENGTH];
-	int ret = 0, fd;
-
-	snprintf(filename, sizeof(filename), "%s/%s", outdir,
+	snprintf(metadata_path, sizeof(metadata_path), "%s/%s", outdir,
 		 metadata_filename);
 
-	fd = open(filename, O_WRONLY | O_CREAT, 0600);
-	if (fd < 0) {
-		printf("Unable to write metadata file %s\n", filename);
-		return -EACCES;
-	}
+	if (!add_metadata) {
+		ret = creat(metadata_path, 0600);
+		if (ret < 0) {
+			printf("Unable to write metadata file %s\n",
+			       metadata_path);
+			return -EACCES;
+		}
 
-	if (!add_metadata)
-		ftruncate(fd, 0);
+		ret = truncate(metadata_path, 0);
+		if (ret < 0) {
+			printf("Unable to truncate metadata file %s\n",
+			       metadata_path);
+			return -EACCES;
+		}
+
+		ret = write_metadata_header(metadata_path);
+		if (ret < 0)
+			return ret;
+	}
 
 	switch (input_fmt) {
 	case INPUT_FMT_RPMDB:
-		ret = digest_list_from_rpmdb(outdir, filename, output_fmt);
+		ret = digest_list_from_rpmdb(outdir, metadata_path, output_fmt,
+					     sign, gpg_key_name);
 		break;
 	case INPUT_FMT_RPMPKG:
-		ret = digest_lists_from_rpmpkg(outdir, filename, input_filename,
-					       output_fmt);
+		ret = digest_lists_from_rpmpkg(outdir, metadata_path,
+					       input_path, output_fmt,
+					       sign, gpg_key_name);
 		break;
 	case INPUT_FMT_DIGEST_LIST_ASCII:
-		ret = write_digests_and_metadata(NULL, outdir, filename,
-						 INPUT_FMT_DIGEST_LIST_ASCII,
-						 input_filename, output_fmt,
-						 is_mutable);
+		ret = digest_list_from_ascii(outdir, metadata_path, input_path,
+					     output_fmt, is_mutable,
+					     sign, gpg_key_name);
+		break;
+	case INPUT_FMT_DEBDB:
+		ret = digest_list_from_deb_mirror(outdir, metadata_path,
+						  output_fmt, distro, repo_url);
 		break;
 	default:
 		ret = -EINVAL;
@@ -125,7 +80,7 @@ int write_digest_lists(char *outdir, char *metadata_filename,
 	return ret;
 }
 
-void usage(char *progname)
+static void usage(char *progname)
 {
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
@@ -144,19 +99,25 @@ void usage(char *progname)
 	       "\t\tcompact: compact digest list\n"
 	       "\t\trpm: RPM package header\n"
 	       "\t-w: files are mutable\n"
-	       "\t-e <algorithm>: digest algorithm\n");
+	       "\t-e <algorithm>: digest algorithm\n"
+	       "\t-s: sign digest list with gpg\n"
+	       "\t-k <key name>: gpg key name\n"
+	       "\t-j <distro name>: distribution name\n"
+	       "\t-u <repo url>: URL of the repository\n");
 }
 
 int main(int argc, char **argv)
 {
 	int add_metadata = 0, is_mutable = 0;
-	char *input_filename = NULL, *metadata_filename = "metadata";
+	char *input_path = NULL, *metadata_filename = "metadata";
 	char *outdir = NULL;
 	enum input_formats input_fmt = INPUT_FMT_RPMDB;
-	enum digest_data_types output_fmt = DATA_TYPE_COMPACT_LIST;
-	int c, ret;
+	enum digest_data_sub_types output_fmt = DATA_SUB_TYPE_COMPACT_LIST;
+	char *distro = "ubuntu", *repo_url = UBUNTU_REPO_URL;
+	int c, ret, sign = 0;
+	char *gpg_key_name = NULL;
 
-	while ((c = getopt(argc, argv, "ad:f:i:m:o:hwe:")) != -1) {
+	while ((c = getopt(argc, argv, "ad:f:i:m:o:hwe:sk:j:u:")) != -1) {
 		switch (c) {
 		case 'a':
 			add_metadata = 1;
@@ -171,6 +132,8 @@ int main(int argc, char **argv)
 				input_fmt = INPUT_FMT_RPMPKG;
 			} else if (strcmp(optarg, "ascii") == 0) {
 				input_fmt = INPUT_FMT_DIGEST_LIST_ASCII;
+			} else if (strcmp(optarg, "debdb") == 0) {
+				input_fmt = INPUT_FMT_DEBDB;
 			} else {
 				printf("Unknown input format %s\n", optarg);
 				return -EINVAL;
@@ -180,16 +143,16 @@ int main(int argc, char **argv)
 			usage(argv[0]);
 			return -EINVAL;
 		case 'i':
-			input_filename = optarg;
+			input_path = optarg;
 			break;
 		case 'm':
 			metadata_filename = optarg;
 			break;
 		case 'o':
 			if (strcmp(optarg, "compact") == 0) {
-				output_fmt = DATA_TYPE_COMPACT_LIST;
+				output_fmt = DATA_SUB_TYPE_COMPACT_LIST;
 			} else if (strcmp(optarg, "rpm") == 0) {
-				output_fmt = DATA_TYPE_RPM;
+				output_fmt = DATA_SUB_TYPE_RPM;
 			} else {
 				printf("Unknown output format %s\n", optarg);
 				return -EINVAL;
@@ -204,19 +167,38 @@ int main(int argc, char **argv)
 				return -EINVAL;
 			}
 			break;
+		case 's':
+			sign = 1;
+			break;
+		case 'k':
+			gpg_key_name = optarg;
+			break;
+		case 'j':
+			distro = optarg;
+			break;
+		case 'r':
+			repo_url = optarg;
+			break;
 		default:
 			printf("Unknown option %c\n", optopt);
 			return -EINVAL;
 		}
 	}
 
-	if (input_fmt != INPUT_FMT_RPMDB && input_filename == NULL) {
+	if (input_fmt != INPUT_FMT_RPMDB  && input_fmt != INPUT_FMT_DEBDB &&
+	    input_path == NULL) {
 		printf("Input file not specified\n");
 		return -EINVAL;
 	}
 
-	if (input_fmt == INPUT_FMT_RPMDB && input_filename != NULL) {
+	if (input_fmt == INPUT_FMT_RPMDB && input_path != NULL) {
 		printf("Input file format not specified\n");
+		return -EINVAL;
+	}
+
+	if (input_fmt == INPUT_FMT_DIGEST_LIST_ASCII &&
+	    output_fmt == DATA_SUB_TYPE_RPM) {
+		printf("Invalid output format\n");
 		return -EINVAL;
 	}
 
@@ -233,8 +215,9 @@ int main(int argc, char **argv)
 	OpenSSL_add_all_digests();
 
 	ret = write_digest_lists(outdir, metadata_filename, add_metadata,
-				 input_fmt, input_filename, output_fmt,
-				 is_mutable);
+				 input_fmt, input_path, output_fmt,
+				 is_mutable, sign, gpg_key_name, distro,
+				 repo_url);
 	EVP_cleanup();
 	return ret;
 }

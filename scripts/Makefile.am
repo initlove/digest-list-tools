@@ -1,1 +1,1 @@
-bin_SCRIPTS = setup_ima_digest_list
+bin_SCRIPTS = setup_ima_digest_lists

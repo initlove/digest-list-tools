@@ -1,87 +1,87 @@
-gen_digest_lists
-================
-
-gen_digest_lists
-----------------
-
+NAME
 gen_digest_lists - generate a digest list
 
 
 SYNOPSIS
---------
-
 gen_digest_lists [options]
 
 
 DESCRIPTION
------------
-
-gen_digest_lists can be used to generate digest lists from the RPM database,
-from an RPM package, or from a list of digests in ASCII format.
+gen_digest_lists can be used to generate digest lists from the RPM/DEB
+databases, from an RPM package, or from a list of digests in ASCII format.
 
 
 OPTIONS
--------
-
 -a: append metadata to an existing file
+
 -d <directory>: directory where digest lists and metadata are stored
+
 -f <input format>: format of the input where digests are taken from
-                   - rpmdb: RPM database (default)
-                   - rpmpkg: RPM package
-                   - ascii: ASCII file with format <algo>:<digest> for each line
+                    - rpmdb: RPM database (default)
+                    - debdb: DEB database
+                    - rpmpkg: RPM package
+                    - ascii: ASCII file with line format <algo>:<digest>
+
 -h: display help
+
 -i <path>: path of the file where digests are taken from
+
 -m <file name>: metadata file name (default: metadata)
+
 -o <output format>: output format of the digest list
                     - compact: compact digest list (default)
                     - rpm: RPM package header
+
 -w: files are mutable
+
 -e <algorithm>: digest algorithm
+
+-s: sign digest list with gpg
+
+-k <key name>: gpg key name
+
+-j <distro name>: distribution name
+
+-u <repo url>: URL of the repository
 
 
 EXAMPLES
---------
-
-Generate an ASCII digest list for each installed RPM package and copy it to
+Generate a compact digest list for each installed RPM package and copy it to
 /etc/ima/digest_lists.
 
-$ gen_digest_lists -d /etc/ima/digest_lists
+# gen_digest_lists -d /etc/ima/digest_lists
 
 Generate an RPM digest list for each installed RPM package and copy it to
 /etc/ima/digest_lists.
 
-$ gen_digest_lists -d /etc/ima/digest_lists -o rpm
+# gen_digest_lists -d /etc/ima/digest_lists -o rpm
 
 Generate an RPM digest list from an RPM package and copy it to
 /etc/ima/digest_lists.
 
-$ gen_digest_lists -d /etc/ima/digest_lists -f rpmpkg -i <RPM package>
+# gen_digest_lists -d /etc/ima/digest_lists -f rpmpkg -i <RPM package>
 
-Generate an ASCII digest list from a file containing digests of immutable files
+Generate a compact digest list from a file containing digests of immutable files
 and copy it to /etc/ima/digest_lists.
 
-$ gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file>
+# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file>
 
-Generate an ASCII digest list from a file containing digests of mutable files
+Generate a compact digest list from a file containing digests of mutable files
 and copy it to /etc/ima/digest_lists.
 
-$ gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w
+# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w
 
-Generate an ASCII digest list from a file containing digests of mutable files
-and copy it to /etc/ima/digest_lists. Append digest list metadata to
+Generate a compact digest list from a file containing digests of mutable
+files and copy it to /etc/ima/digest_lists. Append digest list metadata to
 /etc/ima/digest_lists/metadata.
 
-$ gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w -a
+# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w -a
 
 
 AUTHOR
-------
-
 Written by Roberto Sassu, <roberto.sassu at huawei.com>.
 
 
 COPYING
--------
-
-Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH. Free use of this
-software is granted under the terms of the GNU Public License (GPL).
+Copyright (C) 2018 Huawei Technologies Duesseldorf GmbH. Free use of this
+software is granted under the terms of the GNU Public License 2.0 (GPLv2).

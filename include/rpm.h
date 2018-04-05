@@ -21,16 +21,20 @@
 #include <rpm/rpmdb.h>
 #include <rpm/rpmlog.h>
 
-#include "kernel_ima.h"
+#include "metadata.h"
+#include "compact_list.h"
 
-/* rpmlegacy.h */
-int headerGetEntry(Header h, rpm_tag_t tag, rpm_tagtype_t *type,
-		   rpm_data_t *p, rpm_count_t *c);
-void get_rpm_filename(Header rpm, char *outdir, char *output_filename,
-		      enum digest_data_types output_fmt);
-int check_rpm_digest_algo(Header rpm, char *output_filename);
-void get_rpm_header_signature(Header rpm, u8 **signature,
-			      rpm_count_t *signature_len);
-int write_rpm_header(Header rpm, char *outdir, char *output_filename);
+void get_rpm_path(Header rpm, char *outdir, char *output_path,
+		  enum digest_data_sub_types output_fmt);
 
+int ima_parse_rpm(loff_t size, void *buf, u16 data_algo, void *ctx,
+		  callback_func func);
+
+int digest_list_from_rpmdb(char *outdir, char *metadata_path,
+			   enum digest_data_sub_types output_fmt,
+			   int sign, char *gpg_key_name);
+int digest_lists_from_rpmpkg(char *outdir, char *metadata_path,
+			     char *package_path,
+			     enum digest_data_sub_types output_fmt,
+			     int sign, char *gpg_key_name);
 #endif /* _RPM_H */

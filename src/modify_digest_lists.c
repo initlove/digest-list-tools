@@ -21,32 +21,42 @@
 
 #define CURRENT_DIR "/etc/ima/digest_lists"
 
-static int verify_list_metadata(char *path, u8 *digest)
+static int modify_list_metadata(char *filename, int fd_new, int id_to_remove)
 {
 	void *data, *datap;
 	loff_t size, mmap_size, cur_size = 0;
-	int ret, fd;
+	int ret = 0, fd;
+	int num_entry = 0;
 
-	fd = read_file_from_path(path, &data, &size);
+	fd = read_file_from_path(filename, &data, &size);
 	if (fd < 0) {
-		pr_err("Unable to read: %s (%d)\n", path, fd);
+		pr_err("Unable to read: %s (%d)\n", filename, fd);
 		return fd;
 	}
 
 	mmap_size = size;
 
-	ret = check_digest(data, size, NULL, ima_hash_algo, digest);
-	if (ret < 0) {
-		pr_err("Metadata digest mismatch\n");
-		goto out;
-	}
-
 	datap = data;
 	while (size > 0) {
+		if (id_to_remove != -1 && num_entry++ == id_to_remove)
+			remove_file = 1;
+
 		cur_size = ima_parse_digest_list_metadata(size, datap);
 		if (cur_size < 0) {
 			ret = -EINVAL;
 			goto out;
+		}
+
+		if (fd_new != -1 && !remove_file) {
+			ret = write_check(fd_new, datap, cur_size);
+			if (ret < 0) {
+				pr_err("Failed to write new metadata\n");
+				return -EACCES;
+			}
+		} else if (remove_file) {
+			pr_info("Entry #%d deleted\n",
+				id_to_remove);
+			remove_file = 0;
 		}
 
 		size -= cur_size;
@@ -64,21 +74,22 @@ static void usage(char *progname)
 	printf("Options:\n");
 	printf("\t-d: directory containing metadata and digest lists\n"
 	       "\t-m <file name>: metadata file name\n"
-	       "\t-i <digest>: expected digest of metadata\n"
 	       "\t-h: display help\n"
-	       "\t-e <algorithm>: digest algorithm\n");
+	       "\t-e <algorithm>: digest algorithm\n"
+	       "\t-r <id num>: ID of entry to remove\n"
+	       "\t-s: set ima_algo extended attribute\n"
+	);
 }
 
 int main(int argc, char *argv[])
 {
 	int c, ret = -EINVAL;
-	u8 input_digest[SHA512_DIGEST_SIZE];
+	char path_old[MAX_PATH_LENGTH], path_new[MAX_PATH_LENGTH];
 	char *cur_dir = CURRENT_DIR;
 	char *metadata_filename = "metadata";
-	int digest_len;
-	char *digest_ptr = NULL;
+	long id = -1, fd = -1;
 
-	while ((c = getopt(argc, argv, "d:m:i:he:")) != -1) {
+	while ((c = getopt(argc, argv, "d:m:he:r:s")) != -1) {
 		switch (c) {
 		case 'd':
 			cur_dir = optarg;
@@ -86,17 +97,21 @@ int main(int argc, char *argv[])
 		case 'm':
 			metadata_filename = optarg;
 			break;
-		case 'i':
-			digest_ptr = optarg;
-			break;
 		case 'h':
 			usage(argv[0]);
 			return -EINVAL;
+			break;
 		case 'e':
 			if (ima_hash_setup(optarg)) {
 				printf("Unknown algorithm %s\n", optarg);
 				return -EINVAL;
 			}
+			break;
+		case 'r':
+			id = strtoul(optarg, NULL, 10);
+			break;
+		case 's':
+			set_ima_algo = 1;
 			break;
 		default:
 			printf("Unknown option %c\n", optopt);
@@ -104,23 +119,33 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (digest_ptr == NULL) {
-		printf("Expected metadata digest not specified\n");
-		return -EINVAL;
-	}
-
-	OpenSSL_add_all_digests();
-
-	digest_len = hash_digest_size[ima_hash_algo];
-	hex2bin(input_digest, digest_ptr, digest_len);
-
+	parse_metadata = 1;
 	digest_lists_dir_path = cur_dir;
 
-	ret = verify_list_metadata(metadata_filename, input_digest);
-	if (ret == 0)
-		printf("digest_lists: %d, digests: %d\n",
-		       digest_lists, digests);
+	snprintf(path_old, sizeof(path_old), "%s/%s", cur_dir,
+		 metadata_filename);
+	snprintf(path_new, sizeof(path_new), "%s.new", path_old);
 
-	EVP_cleanup();
+	if (id != -1) {
+		fd = open(path_new, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (fd < 0) {
+			pr_err("Unable to write to %s\n", path_new);
+			return -EACCES;
+		}
+	}
+
+	ret = modify_list_metadata(metadata_filename, fd, id);
+	if (id == -1)
+		return ret;
+
+	if (ret == 0) {
+		ret = rename(path_new, path_old);
+		if (ret < 0)
+			pr_err("Unable to rename %s to %s\n",
+			       path_new, path_old);
+	} else {
+		unlink(path_new);
+	}
+
 	return ret;
 }

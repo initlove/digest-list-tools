@@ -1,4 +1,5 @@
 SUBDIRS = docs \
+	  initrd \
 	  lib \
 	  scripts \
 	  src

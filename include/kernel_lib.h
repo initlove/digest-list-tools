@@ -32,13 +32,13 @@ typedef u_int64_t u64;
 typedef int bool;
 typedef long loff_t;
 
-enum kernel_read_file_id {READING_DIGEST_LIST_METADATA, READING_DIGEST_LIST};
-
 #define true 1
 #define false 0
 
 #define S_IWUGO         (S_IWUSR|S_IWGRP|S_IWOTH)
 #define S_IXUGO         (S_IXUSR|S_IXGRP|S_IXOTH)
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
 /* bitmap */
 #define __KERNEL_DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
@@ -65,13 +65,31 @@ static inline bool constant_test_bit(int nr, const void *addr)
 #define test_bit(nr,addr) constant_test_bit((nr),(addr))
 
 /* errors */
+#define EPERM            1      /* Operation not permitted */
 #define ENOENT           2      /* No such file or directory */
+#define EIO              5      /* I/O error */
 #define ENOMEM          12      /* Out of memory */
 #define EACCES          13      /* Permission denied */
 #define EEXIST          17      /* File exists */
 #define EINVAL          22      /* Invalid argument */
+#define ENODATA         61      /* No data available */
+#define EBADMSG         74      /* Not a data message */
+#define EMSGSIZE        90      /* Message too long */
 
 #define pr_err printf
+#define pr_info printf
+
+#ifdef DEBUG
+#define pr_devel printf
+#define pr_debug printf
+#else
+static inline void pr_devel(const char *__restrict __format, ...)
+{
+}
+static inline void pr_debug(const char *__restrict __format, ...)
+{
+}
+#endif /* DEBUG */
 
 /* endianness conversion */
 #define be32_to_cpu __be32_to_cpu
@@ -131,5 +149,13 @@ void bitmap_zero(unsigned long *dst, unsigned int nbits);
 void bitmap_set(unsigned long *map, unsigned int start, int len);
 
 int hex2bin(u8 *dst, const char *src, size_t count);
+
+#define XATTR_SECURITY_PREFIX	"security."
+
+#define XATTR_IMA_SUFFIX "ima"
+#define XATTR_NAME_IMA XATTR_SECURITY_PREFIX XATTR_IMA_SUFFIX
+
+#define XATTR_IMA_ALGO_SUFFIX "ima_algo"
+#define XATTR_NAME_IMA_ALGO XATTR_SECURITY_PREFIX XATTR_IMA_ALGO_SUFFIX
 
 #endif /* _KERNEL_LIB_H */
