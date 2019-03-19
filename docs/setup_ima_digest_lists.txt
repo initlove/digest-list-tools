@@ -1,0 +1,70 @@
+NAME
+setup_ima_digest_lists - generate digest lists for measurement and appraisal
+
+
+SYNOPSIS
+setup_ima_digest_lists parser|distro|immutable|mutable [options]
+
+
+DESCRIPTION
+setup_ima_digest_lists can be used to generate digest lists for measurement and
+appraisal. Digest lists can be generated from the RPM database, or from IMA
+measurements.
+
+
+COMMANDS
+parser: generate digest lists for the parser
+
+distro: generate digest lists from the RPM database
+
+immutable: generate a digest list of immutable files from IMA measurements
+
+mutable: generate a digest list of mutable files from IMA measurements
+
+
+OPTIONS
+-d <directory>: directory where digest lists are stored
+
+-i: use current IMA measurement list
+
+-V <kernel version>: kernel version
+
+-D <search dirs>: directories containing immutable/mutable files
+
+-E <exclude dirs>: excluded directories
+
+-u: update digest lists of mutable files
+
+-r: replace mutable files with backup
+
+-g: generate digest lists of mutable files
+
+-a: run initramfs generator
+
+-s: sign digest list
+
+-v <private key>: path of private key in PEM format
+
+-x <x509 certificate>: path of X.509 certificate in PEM format
+
+-h: display help
+
+
+EXAMPLES
+Generate digest lists from the RPM database.
+
+# setup_ima_digest_lists distro
+
+Generate a digest list of immutable files in /etc from IMA measurements.
+
+# setup_ima_digest_lists immutable -a -i -D "/etc"
+
+
+AUTHOR
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

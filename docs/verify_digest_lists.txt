@@ -1,0 +1,32 @@
+NAME
+verify_digest_lists - verify the integrity of digest lists
+
+
+SYNOPSIS
+verify_digest_lists [options]
+
+
+DESCRIPTION
+verify_digest_lists can be used to verify the integrity of digest lists.
+
+
+OPTIONS
+-d <directory>: directory containing digest lists
+
+-h: display help
+
+
+EXAMPLES
+Verify digest lists stored in /etc/ima/digest_lists.
+
+# verify_digest_lists
+
+
+AUTHOR
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

@@ -1,0 +1,40 @@
+NAME
+upload_digest_lists - upload digest lists
+
+
+SYNOPSIS
+upload_digest_lists [options]
+
+
+DESCRIPTION
+upload_digest_lists uploads digest lists to IMA or write the converted digest
+lists to a file.
+
+
+OPTIONS
+-d <directory>: directory containing digest lists
+
+-o <file>: write converted digest list to a file
+
+-h: display help
+
+
+EXAMPLES
+Upload digest lists stored in /etc/ima/digest_lists.
+
+# upload_digest_lists -d /etc/ima/digest_lists
+
+Convert all digest lists in /etc/ima/digest_lists to the compact format and
+save the converted lists to converted_lists.
+
+# upload_digest_lists -d /etc/ima/digest_lists -o converted_lists
+
+
+AUTHOR
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+Copyright (C) 2018,2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

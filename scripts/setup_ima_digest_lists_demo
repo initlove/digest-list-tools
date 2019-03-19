@@ -1,0 +1,51 @@
+#! /bin/bash
+
+# Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+#
+# Author: Roberto Sassu <roberto.sassu@huawei.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, version 2 of the
+# License.
+#
+# File: setup_ima_digest_lists_demo
+#      Script to automatize setup of digest lists.
+
+
+function usage() {
+    echo "Usage: $0 distro|immutable|mutable-generate|mutable-sign"
+"[private key (PEM)] [x.509 certificate (PEM)]"
+}
+
+if [ -z  "$1" ]; then
+    usage
+    exit 1
+fi
+
+if [ -n "$2" ] && [ -n "$3" ]; then
+   sign_opt="-s -v $2 -x $3"
+fi
+
+if [ "$1" = "distro" ]; then
+    setup_ima_digest_lists distro -a $sign_opt
+elif [ "$1" = "immutable" ]; then
+    setup_ima_digest_lists immutable \
+        -D "/etc /usr/lib/modules/`uname -r`/kernel" \
+        -E "/etc/ima/digest_lists" $sign_opt
+
+    setup_ima_digest_lists immutable -a -i \
+        -E "/etc /var /root /usr/lib/modules/`uname -r`" $sign_opt
+elif [ "$1" = "mutable-generate" ]; then
+    setup_ima_digest_lists mutable -i -D "/root" -g
+
+    setup_ima_digest_lists mutable -D "/var /usr/lib/modules/`uname -r`/" -g
+
+    echo update > /.digestlist_state
+
+    systemctl enable setup-ima-digest-lists.service
+elif [ "$1" = "mutable-sign" ]; then
+    setup_ima_digest_lists mutable $sign_opt -a
+
+    echo replace > /.digestlist_state
+fi

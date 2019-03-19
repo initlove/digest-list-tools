@@ -1,0 +1,68 @@
+NAME
+gen_digest_lists - generate a digest list
+
+
+SYNOPSIS
+gen_digest_lists [options]
+
+
+DESCRIPTION
+gen_digest_lists can be used to generate digest lists with one of the
+available generators (e.g. rpm, ima).
+
+
+OPTIONS
+-d <directory>: directory containing digest lists
+
+-f <format>: format of the input file
+
+-i <path>: path of the input file
+
+-o <operation>: operation to do:
+		- add: insert a new digest list at the position specified
+		- append: add a new digest list after the existing ones
+		- remove: remove a digest list at the position specified
+		- sign: sign a digest list
+
+-p <position>: position of the file in the directory to add/remove
+
+-t <compact id>: type of compact list to generate
+
+-m <modifiers>: compact list modifiers separated by comma
+
+-a <algorithm>: hash algorithm
+
+-s: sign generated digest lists
+
+-k <key>: key to sign
+
+-w [<key password>]: key password or prompt
+
+-h: display help
+
+
+EXAMPLES
+Generate a compact digest list for each installed RPM package and copy it to
+/etc/ima/digest_lists.
+
+# gen_digest_lists -f rpm+db -t file -o append
+
+Generate an RPM digest list from an RPM package and copy it to
+/etc/ima/digest_lists.
+
+# gen_digest_lists -f rpm+pkg -i <RPM path> -t file -o append
+
+Generate a compact digest list of immutable files from the IMA measurement
+list.
+
+# gen_digest_lists -f ima+ima_ng -t file_immutable -o append
+
+
+AUTHOR
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

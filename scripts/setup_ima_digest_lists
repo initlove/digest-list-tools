@@ -1,0 +1,411 @@
+#! /bin/bash
+
+# Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+#
+# Author: Roberto Sassu <roberto.sassu@huawei.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, version 2 of the
+# License.
+#
+# File: setup_ima_digest_lists
+#      Configure digest lists.
+
+
+OPTIND=2
+digest_lists_dir="/etc/ima/digest_lists"
+backup_dir="/backup"
+parser_path="/usr/bin/upload_digest_lists"
+gen_digest_lists_result=0
+use_current_ima_list=0
+sign_opt=""
+sign_opts=""
+kernel_ver=$(uname -r)
+freeze_mutable=0
+unfreeze_mutable=0
+search_dirs=""
+exclude_dirs=""
+new_list=""
+selected_lists=""
+mutable_op=""
+gen_initramfs=0
+compact_type="file"
+metadata_opt=""
+signed_lists=""
+
+function detect_dracut_metadata_opt() {
+    result=$(dracut --help | grep file-metadata)
+
+    if [ -n "$result" ]; then
+        metadata_opt="-e xattr"
+    fi
+}
+
+function detect_mkinitramfs_metadata_opt() {
+    result=$(mkinitramfs 2> /dev/stdout |grep metadata)
+
+    if [ -n "$result" ]; then
+        metadata_opt="-e xattr"
+    fi
+}
+
+function replace_files() {
+    for list in $(ls -d $backup_dir/*.orig); do
+        if [ -e ${list%%.orig} ]; then
+            continue
+        fi
+
+        list=$(basename $list)
+
+        for path in $(find $backup_dir/$list -type f); do
+            path=${path##$backup_dir/$list}
+            parent_dir=$(dirname $path)
+
+            if [ ! -e $backup_dir/${list%%.orig}/$parent_dir ]; then
+                mkdir -p $backup_dir/${list%%.orig}/$parent_dir
+            fi
+
+            cp -f $path $backup_dir/${list%%.orig}/$parent_dir/
+            attr -S -r ima $path 2> /dev/null
+            attr -S -r evm $path 2> /dev/null
+            cp -f $backup_dir/$list/$path $parent_dir/
+        done
+    done
+}
+
+function update_lists() {
+    initramfs_dir=$(mktemp -d)
+    if [ -z "$initramfs_dir" ]; then
+        echo "Temporary directory not created"
+        return
+    fi
+
+    initramfs=$(ls /boot/init*$(uname -r)* | awk '{print $1}')
+    zcat $initramfs | cpio -i -D $initramfs_dir
+
+    for list in $(ls -d $backup_dir/*.orig); do
+        if [ -e ${list%%.orig} ]; then
+            continue
+        fi
+
+        list_basename=$(basename ${list%%.orig})
+        list=$digest_lists_dir/$list_basename
+
+        mv $list $list.tmp
+        while read pcr template_digest template_name digest path; do
+            if [ -z "$template_digest" ]; then
+                echo $pcr >> $list
+                continue
+            fi
+
+            if [ ! -e $path ]; then
+                echo "$pcr $template_digest $template_name $digest $path" \
+                    >> $list
+                continue
+            fi
+
+            path_dirname=$(dirname $path)
+            new_digest=$(${digest%%:*}sum $path | awk '{print $1}')
+
+            if [ $new_digest != ${digest##*:} ] && \
+               [ -e ${initramfs_dir}${path} ]; then
+                initramfs_digest=$(${digest%%:*}sum ${initramfs_dir}${path} | \
+                                   awk '{print $1}')
+                if [ $initramfs_digest == ${digest##*:} ]; then
+                    new_digest=$initramfs_digest
+                fi
+            fi
+
+            echo "$pcr $template_digest $template_name \
+${digest%%:*}:$new_digest $path" >> $list
+            if [ $new_digest != ${digest##*:} ]; then
+                if [ ! -e $backup_dir/$list_basename.orig/$path_dirname ]; then
+                    mkdir -p $backup_dir/$list_basename.orig/$path_dirname
+                fi
+
+                cp -f $path $backup_dir/$list_basename.orig/$path_dirname/
+            fi
+
+        done < $list.tmp
+
+        rm $list.tmp
+    done
+
+    rm -Rf $initramfs_dir
+}
+
+function get_awk_opt_dir() {
+    dirs=$1
+    op=$2
+    awk_op="~"
+    neg_op=""
+
+    if [ -z "$1" ]; then
+        echo ""
+        return
+    fi
+
+    if [ "$op" = "&&" ]; then
+        neg_op="!"
+    fi
+
+    awk_opt_dir=""
+    for dir in $dirs; do
+        if [ -n "$awk_opt_dir" ]; then
+            awk_opt_dir="$awk_opt_dir $op "
+        fi
+
+        awk_opt_dir="${awk_opt_dir}
+            \$5 ${neg_op}~ /^$(echo $dir | sed 's/[][/\.^$(){}|*+?]/\\&/g')/"
+    done
+
+    echo $awk_opt_dir
+}
+
+function get_awk_opt() {
+    search_dirs=$1
+    exclude_dirs=$2
+
+    awk_opt=""
+    awk_incl_opt="$(get_awk_opt_dir "$search_dirs" '||')"
+    if [ -n "$awk_incl_opt" ]; then
+        echo -n "($awk_incl_opt)"
+    fi
+
+    awk_excl_opt="$(get_awk_opt_dir "$exclude_dirs" '&&')"
+    if [ -n "$awk_excl_opt" ]; then
+        if [ -n "$awk_incl_opt" ]; then
+            echo -n " &&"
+        fi
+
+        echo -n " $awk_excl_opt"
+    fi
+
+    if [ -z "$awk_incl_opt" ] && [ -z "$awk_excl_opt" ]; then
+        echo -n "{print}"
+    fi
+}
+
+function question() {
+    echo "${1}? [y/N]"
+    read answer
+
+    if [ "$answer" != "y" ]; then
+        echo "Exiting."
+        exit 0
+    fi
+}
+
+function usage() {
+    echo "Usage: $0 parser|distro|immutable|mutable [options]"
+    echo "Options:"
+    echo -e "\t-d <directory>: directory where digest lists are stored"
+    echo -e "\t-i: use current IMA measurement list"
+    echo -e "\t-V <kernel version>: kernel version"
+    echo -e "\t-D <search dirs>: directories containing immutable/mutable files"
+    echo -e "\t-E <exclude dirs>: excluded directories"
+    echo -e "\t-u: update digest lists of mutable files"
+    echo -e "\t-r: replace mutable files with backup"
+    echo -e "\t-g: generate digest lists of mutable files"
+    echo -e "\t-a: run initramfs generator"
+    echo -e "\t-s: sign digest list"
+    echo -e "\t-v <private key>: path of private key in PEM format"
+    echo -e "\t-x <x509 certificate>: path of X.509 certificate in PEM format"
+    echo -e "\t-h: display help"
+}
+
+if [ "$1" != "parser" ] && [ "$1" != "distro" ] && [ "$1" != "immutable" ] && \
+   [ "$1" != "mutable" ]; then
+    usage
+    exit 1
+fi
+
+if [ -e "/etc/os-release" ]; then
+    source /etc/os-release
+fi
+
+while getopts "d:iV:D:E:urgasv:x:h" opt; do
+    case "$opt" in
+    d)  digest_lists_dir=$OPTARG
+        ;;
+    i)  use_current_ima_list=1
+        ;;
+    V)  kernel_ver=$OPTARG
+        ;;
+    D)  search_dirs=$OPTARG
+        ;;
+    E)  exclude_dirs=$OPTARG
+        ;;
+    u)  mutable_op="update"
+        ;;
+    r)  mutable_op="replace"
+        ;;
+    g)  mutable_op="generate"
+        ;;
+    a)  gen_initramfs=1
+        ;;
+    s)  sign_opt="-s"
+        ;;
+    v)  private_key=$OPTARG
+        ;;
+    x)  cert=$OPTARG
+        ;;
+    h)
+        usage
+        exit 0
+        ;;
+    esac
+done
+
+if [ -n "$sign_opt" ]; then
+    if [ -z "$private_key" ] || [ -z "$cert" ]; then
+        echo "Private/public key not specified"
+        exit 1
+    fi
+
+    sign_opts="$sign_opt -k $private_key"
+fi
+
+if [ "$1" = "mutable" ] && [ -z "$mutable_op" ] && [ -z "$sign_opt" ]; then
+    if [ -e /.digestlist_state ]; then
+        mutable_op=$(cat /.digestlist_state)
+    fi
+fi
+
+if [ "$1" != "mutable" ] && [ -n "$mutable_op" ]; then
+    echo "Mutable options cannot be used with $1 command"
+    exit 1
+fi
+
+if [ ! -e "$digest_lists_dir" ]; then
+    mkdir -p $digest_lists_dir
+fi
+
+compact_type="parser"
+
+if [ "$1" = "parser" ] || \
+   [ ! -e $digest_lists_dir/compact-upload_digest_lists ]; then
+    if [ -n "$sign_opts" ]; then
+        temp_cert="/tmp/$(basename ${cert%%.pem}.der)"
+        openssl x509 -in $cert -out $temp_cert -outform der
+        gen_digest_lists -d $digest_lists_dir -t key -f copy -i $temp_cert \
+                         -o append -m immutable
+        rm $temp_cert
+    fi
+
+    input_opt="-i ${parser_path}$(ldd $parser_path | awk '{ if ($2 == "=>")
+        shlib_list=shlib_list" -i " $3; if ($1 ~ /^\//)
+        shlib_list=shlib_list" -i " $1 } END { print shlib_list }')"
+    gen_digest_lists -d $digest_lists_dir -f compact -t $compact_type \
+                     -o append $input_opt $sign_opts -m immutable
+
+    libdir=$(dirname $(ldconfig -p | awk '{ if ($(NF-1) == "=>")
+        lib=$NF; if (lib != "") exit } END { print lib }'))
+    for lib in $(ls $libdir/digestlist/libparser-*.so); do
+        gen_digest_lists -d $digest_lists_dir -f compact -t $compact_type \
+                         -o append -i $lib $sign_opts -m immutable
+    done
+fi
+
+compact_type="file"
+
+if [ "$1" = "distro" ]; then
+    echo "Generate digest list from package manager database"
+    if [ "$ID" == "debian" ] || [ "$ID" == "ubuntu" ]; then
+        echo "Debian-based distributions are currently not supported"
+        exit 1
+    fi
+
+    gen_digest_lists -d $digest_lists_dir -f rpm+db -t $compact_type -o append \
+                     $sign_opts
+    gen_digest_lists_result=$?
+elif [ "$1" = "immutable" ]; then
+    new_list="$(mktemp)"
+    modifiersopt="-m immutable"
+elif [ "$1" = "mutable" ]; then
+    if [ "$mutable_op" = "generate" ]; then
+        new_list="$(mktemp)"
+    elif [ "$mutable_op" = "update" ]; then
+        update_lists
+    elif [ "$mutable_op" = "replace" ]; then
+        replace_files
+        rm /.digestlist_state
+        /usr/lib/dracut/dracut-initramfs-restore
+        systemctl --force reboot
+    elif [ -n "$sign_opts" ]; then
+        for file in $(verify_digest_lists | \
+                      awk '{ if ($3 == "process") print $4 }'); do
+            gen_digest_lists -o sign $sign_opts -i $file
+            signed_lists="$signed_lists $file"
+        done
+    else
+        echo "Please specify one of -u, -r, -g, -s options with mutable command"
+        exit 1
+    fi
+fi
+
+if [ -n "$new_list" ]; then
+    # find unknown files
+    if [ $use_current_ima_list -eq 0 ]; then
+        if [ -z "$search_dirs" ]; then
+            search_dirs="$(cat /proc/mounts |
+                           awk '$1 ~ /^\// { printf("%s ", $2); }')"
+        fi
+
+        set -f
+
+        find_opt=""
+        for dir in $exclude_dirs; do
+            find_opt="$find_opt ! -path $dir/*"
+        done
+
+        echo "Read files owned by root from $search_dirs"
+        find $search_dirs -xdev -type f -uid 0 $find_opt -exec head -c0 \{} \;
+
+        set +f
+    fi
+
+    awk_opt="$(get_awk_opt "$search_dirs" "$exclude_dirs")"
+
+    # create an ASCII file containing the digests of unknown measurements
+    echo "Create digest list of unknown files"
+    cat /sys/kernel/security/ima/ascii_runtime_measurements | \
+        sed 's/\/sysroot//' | awk "$awk_opt" | \
+        awk '$4 != "sha1:0000000000000000000000000000000000000000"' > $new_list
+
+    # edit the list of unknown digests
+    vi $new_list
+
+    question "Generate the digest list"
+
+    selected_lists=$new_list
+
+    gen_digest_lists -d $digest_lists_dir -f ima+ima_ng -i $new_list -o append \
+                     -t $compact_type $modifiersopt $sign_opts
+
+    rm $new_list
+
+    gen_digest_lists_result=$?
+
+    if [ $gen_digest_lists_result -eq 0 ] &&
+       [ "$1" = "mutable" ] && [ "$mutable_op" = "generate" ]; then
+        generated_list=$(ls $digest_lists_dir | sort -n | tail -n 1)
+        mkdir -p $backup_dir/$generated_list.orig
+    fi
+fi
+
+if [ $gen_digest_lists_result -eq 0 ] && \
+   { [ -n "$new_list" ] || [ "$1" = "distro" ] || [ -n "$signed_lists" ]; } && \
+   [ $gen_initramfs -eq 1 ]; then
+    echo "Update initial ram disk"
+    if [ -f /usr/sbin/mkinitramfs ]; then
+        detect_mkinitramfs_metadata_opt
+        mkinitramfs -o /boot/initrd.img-$kernel_ver $kernel_ver $metadata_opt
+    elif [ -f /usr/bin/dracut ]; then
+        detect_dracut_metadata_opt
+        dracut -f --kver $kernel_ver $metadata_opt
+    else
+        echo "Cannot update initial ram disk"
+    fi
+fi
