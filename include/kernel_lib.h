@@ -1,8 +1,9 @@
 /*
  * Copyright (C) 1991, 1992 Linus Torvalds
- * Copyright 2007 rPath, Inc. - All Rights Reserved
+ * Copyright (C) 2002 Nadia Yvette Chambers, IBM
+ * Copyright (C) 2007 rPath, Inc. - All Rights Reserved
  * Copyright (c) 2013 Dmitry Kasatkin <d.kasatkin@samsung.com>
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -32,13 +33,23 @@
 #endif
 
 #include "list.h"
+#include "config.h"
 
 /* kernel types */
 typedef u_int8_t u8;
 typedef u_int16_t u16;
 typedef u_int32_t u32;
 typedef u_int64_t u64;
+#ifndef bool
 typedef int bool;
+#endif
+
+typedef unsigned long atomic_long_t;
+
+static inline void atomic_long_inc(atomic_long_t *x)
+{
+	(*x)++;
+}
 
 #define true 1
 #define false 0
@@ -63,6 +74,12 @@ static inline void pr_debug(const char *__restrict __format, ...)
 }
 #endif /* DEBUG */
 
+#define rcu_read_lock()
+#define rcu_read_unlock()
+
+#define GFP_KERNEL 0
+#define kmalloc(x, y) malloc(x)
+
 /* endianness conversion */
 #define be32_to_cpu __be32_to_cpu
 #define be16_to_cpu __be16_to_cpu
@@ -70,8 +87,10 @@ static inline void pr_debug(const char *__restrict __format, ...)
 #define cpu_to_be16 __cpu_to_be16
 #define le16_to_cpu __le16_to_cpu
 #define le32_to_cpu __le32_to_cpu
+#define le64_to_cpu __le64_to_cpu
 #define cpu_to_le16 __cpu_to_le16
 #define cpu_to_le32 __cpu_to_le32
+#define cpu_to_le64 __cpu_to_le64
 
 /* crypto */
 #define CRYPTO_MAX_ALG_NAME             128
@@ -120,6 +139,69 @@ enum hash_algo {
 extern const char *const hash_algo_name[HASH_ALGO__LAST];
 extern const int hash_digest_size[HASH_ALGO__LAST];
 
+/* hash */
+#define BIT_PER_LONG SIZEOF_LONG * 8
+
+#if BIT_PER_LONG == 32
+#define GOLDEN_RATIO_PRIME GOLDEN_RATIO_32
+#define hash_long(val, bits) hash_32(val, bits)
+#elif BIT_PER_LONG == 64
+#define hash_long(val, bits) hash_64(val, bits)
+#define GOLDEN_RATIO_PRIME GOLDEN_RATIO_64
+#else
+#error Wordsize not 32 or 64
+#endif
+
+#define GOLDEN_RATIO_32 0x61C88647
+#define GOLDEN_RATIO_64 0x61C8864680B583EBull
+
+#ifndef HAVE_ARCH__HASH_32
+#define __hash_32 __hash_32_generic
+#endif
+static inline u32 __hash_32_generic(u32 val)
+{
+	return val * GOLDEN_RATIO_32;
+}
+
+#ifndef HAVE_ARCH_HASH_32
+#define hash_32 hash_32_generic
+#endif
+static inline u32 hash_32_generic(u32 val, unsigned int bits)
+{
+	/* High bits are more random, so use them. */
+	return __hash_32(val) >> (32 - bits);
+}
+
+#ifndef HAVE_ARCH_HASH_64
+#define hash_64 hash_64_generic
+#endif
+static __always_inline u32 hash_64_generic(u64 val, unsigned int bits)
+{
+#if BITS_PER_LONG == 64
+	/* 64x64-bit multiply is efficient on all 64-bit processors */
+	return val * GOLDEN_RATIO_64 >> (64 - bits);
+#else
+	/* Hash 64 bits using only 32x32-bit multiply. */
+	return hash_32((u32)val ^ __hash_32(val >> 32), bits);
+#endif
+}
+
+static inline u32 hash_ptr(const void *ptr, unsigned int bits)
+{
+	return hash_long((unsigned long)ptr, bits);
+}
+
+/* This really should be called fold32_ptr; it does no hashing to speak of. */
+static inline u32 hash32_ptr(const void *ptr)
+{
+	unsigned long val = (unsigned long)ptr;
+
+#if BITS_PER_LONG == 64
+	val ^= (val >> 32);
+#endif
+	return (u32)val;
+}
+
 /* from kernel.h */
 int hex2bin(u8 *dst, const char *src, size_t count);
 
@@ -129,6 +211,20 @@ int hex2bin(u8 *dst, const char *src, size_t count);
 
 /* from ima.h */
 extern bool ima_canonical_fmt;
+
+#define IMA_HASH_BITS 9
+#define IMA_MEASURE_HTABLE_SIZE (1 << IMA_HASH_BITS)
+
+static inline unsigned long ima_hash_key(u8 *digest)
+{
+	return hash_long(*digest, IMA_HASH_BITS);
+}
+
+struct ima_h_table {
+	atomic_long_t len;	/* number of stored measurements in the list */
+	atomic_long_t violations;
+	struct hlist_head queue[IMA_MEASURE_HTABLE_SIZE];
+};
 
 /* from integrity.h */
 enum evm_ima_xattr_type {
@@ -155,11 +251,18 @@ struct signature_v2_hdr {
 	uint8_t sig[0];		/* signature payload */
 } __attribute__((packed));
 
+struct evm_ima_xattr_data {
+	uint8_t type;
+	uint8_t digest[SHA512_DIGEST_SIZE + 1];
+} __attribute__((packed));
+
 /* from integrity.h */
-enum compact_types { COMPACT_KEY, COMPACT_PARSER, COMPACT_FILE, COMPACT__LAST };
+enum compact_types { COMPACT_KEY, COMPACT_PARSER, COMPACT_FILE,
+		     COMPACT_METADATA, COMPACT__LAST };
 enum compact_modifiers { COMPACT_MOD_IMMUTABLE, COMPACT_MOD__LAST };
 
 struct ima_digest {
+	struct hlist_node hnext;
 	struct list_head list;
 	enum hash_algo algo;
 	enum compact_types type;
@@ -185,6 +288,11 @@ int default_func(u8 *digest, enum hash_algo algo, enum compact_types type,
                  u16 modifiers);
 
 int ima_parse_compact_list(loff_t size, void *buf,
-			   add_digest_func ima_digest_data_entry);
+			   add_digest_func ima_add_digest_data_entry,
+			   enum hash_algo *algo);
+
+struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo);
+int ima_add_digest_data_entry_kernel(u8 *digest, enum hash_algo algo,
+				     enum compact_types type, u16 modifiers);
 
 #endif /* _KERNEL_LIB_H */

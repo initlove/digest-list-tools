@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -22,7 +22,8 @@
 
 int generator(int dirfd, int pos, struct list_head *head_in,
 	      struct list_head *head_out, enum compact_types type,
-	      u16 modifiers, enum hash_algo algo)
+	      u16 modifiers, enum hash_algo algo, enum hash_algo ima_algo,
+	      bool tlv, char *alt_root)
 {
 	struct path_struct *cur;
 	char filename[NAME_MAX + 1];
@@ -50,7 +51,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		if (ret < 0)
 			goto out;
 
-		fd = openat(dirfd, filename, O_WRONLY | O_CREAT, 0600);
+		fd = openat(dirfd, filename, O_WRONLY | O_CREAT, 0644);
 		if (fd < 0) {
 			munmap(buf, size);
 			ret = fd;
@@ -64,11 +65,12 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		if (ret < 0)
 			goto out;
 
-		ret = add_path_struct(filename, head_out);
+		ret = add_path_struct(filename, NULL, head_out);
 		if (ret < 0)
 			goto out;
 
-		pos++;
+		if (pos >= 0)
+			pos++;
 	}
 out:
 	if (ret < 0)

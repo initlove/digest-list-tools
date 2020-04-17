@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -31,64 +31,33 @@
 
 #define DEFAULT_DIR "/etc/ima/digest_lists"
 
-
-static int process_lists(int dirfd, struct list_head *head,
-			 enum compact_types type)
-{
-	struct dirent **digest_lists;
-	struct key_struct *k;
-	LIST_HEAD(parser_lib_head);
-	int ret, i, n;
-
-	n = scandirat(dirfd, ".", &digest_lists, filter[type], compare_lists);
-	if (n == -1) {
-		printf("Unable to access digest lists\n");
-		return -EACCES;
-	}
-
-	for (i = 0; i < n; i++) {
-		if (type == COMPACT_KEY) {
-			k = new_key(head, dirfd, digest_lists[i]->d_name, NULL,
-				    false);
-			if (!k) {
-				ret = -ENOMEM;
-				goto out;
-			}
-
-			continue;
-		}
-
-		ret = verify_file(head, dirfd, digest_lists[i]->d_name);
-		if (ret < 0)
-			printf("Failed to process %s\n",
-			       digest_lists[i]->d_name);
-	}
-out:
-	free_keys(&parser_lib_head);
-	for (i = 0; i < n; i++)
-		free(digest_lists[i]);
-	free(digest_lists);
-	return 0;
-}
-
 static void usage(char *progname)
 {
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
 	printf("\t-d <directory>: directory containing digest lists\n"
+	       "\t-f <filename>: filename in the digest list directory\n"
+	       "\t-v: verbose mode\n"
 	       "\t-h: display help\n");
 }
 
 int main(int argc, char *argv[])
 {
-	int c, i, dirfd, ret = -EINVAL;
+	int c, i, dirfd, verbose = 0, ret = -EINVAL;
 	char *cur_dir = DEFAULT_DIR;
+	char *digest_list_filename = NULL;
 	LIST_HEAD(key_head);
 
-	while ((c = getopt(argc, argv, "d:h")) != -1) {
+	while ((c = getopt(argc, argv, "d:vh")) != -1) {
 		switch (c) {
 		case 'd':
 			cur_dir = optarg;
+			break;
+		case 'f':
+			digest_list_filename = optarg;
+			break;
+		case 'v':
+			verbose = 1;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -106,7 +75,9 @@ int main(int argc, char *argv[])
 	}
 
 	for (i = 0; i < COMPACT__LAST; i++) {
-		ret = process_lists(dirfd, &key_head, i);
+		ret = process_lists(dirfd, -1, 0, verbose, &key_head, i,
+				    PARSER_OP_VERIFY, NULL, cur_dir,
+				    digest_list_filename);
 		if (ret < 0)
 			printf("Cannot access digest lists, ret: %d\n", ret);
 	}

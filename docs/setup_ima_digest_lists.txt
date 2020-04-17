@@ -25,7 +25,9 @@ mutable: generate a digest list of mutable files from IMA measurements
 OPTIONS
 -d <directory>: directory where digest lists are stored
 
--i: use current IMA measurement list
+-i: add files not found in existing digest lists
+
+-t <type>: specify type of compact list
 
 -V <kernel version>: kernel version
 
@@ -47,6 +49,8 @@ OPTIONS
 
 -x <x509 certificate>: path of X.509 certificate in PEM format
 
+-l: include LSM label
+
 -h: display help
 
 
@@ -65,6 +69,6 @@ Written by Roberto Sassu, <roberto.sassu at huawei.com>.
 
 
 COPYING
-Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH. Free use of
 this software is granted under the terms of the GNU Public License 2.0
 (GPLv2).

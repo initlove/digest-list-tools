@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018,2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2018-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -20,42 +20,20 @@
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <keyutils.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
-#include <asm/unistd.h>
+#include <sys/vfs.h>
+#include <linux/magic.h>
 
 #include "compact_list.h"
+#include "ima_list.h"
+#include "selinux.h"
 
 #define DEFAULT_DIR "/etc/ima/digest_lists"
 #define IMA_DIGEST_LIST_DATA_PATH IMA_SECURITYFS_PATH "/digest_list_data"
 
 #define MOUNT_FLAGS MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_RELATIME
-
-static key_serial_t ima_keyring;
-
-
-static int key_upload(int dirfd, char *key_filename)
-{
-	void *buf;
-	loff_t size;
-	int ret;
-
-	if (!ima_keyring) {
-		ima_keyring = syscall(__NR_add_key, "keyring", "_ima",
-				NULL, 0, KEY_SPEC_USER_KEYRING);
-		if (ima_keyring == -1)
-			return -EPERM;
-	}
-
-	ret = read_file_from_path(dirfd, key_filename, &buf, &size);
-	if (ret)
-		return ret;
-
-	return syscall(__NR_add_key, "asymmetric", NULL, buf, size,
-		       ima_keyring);
-}
 
 static int init_digest_list_upload(int *mount_sysfs, int *mount_securityfs)
 {
@@ -96,57 +74,6 @@ out:
 	return fd;
 }
 
-static int digest_list_upload(int dirfd, int fd, struct list_head *head,
-			      struct list_head *parser_lib_head,
-			      char *digest_list_filename)
-{
-	char *list_id, *format_start, *format_end;
-	struct lib *parser;
-	void *buf;
-	loff_t size;
-	int ret;
-
-	list_id = strchr(digest_list_filename, '-');
-	if (!list_id++)
-		return -EINVAL;
-
-	format_start = strchr(list_id, '-');
-	if (!format_start++)
-		return -EINVAL;
-
-	format_end = strchrnul(format_start, '-');
-	if (!format_end)
-		return -EINVAL;
-
-	ret = read_file_from_path(dirfd, digest_list_filename, &buf, &size);
-	if (ret)
-		return ret;
-
-	if (!strncmp(format_start, "compact", 7) && *format_end == '-') {
-		if (fd >= 0) {
-			ret = write_check(fd, buf, size);
-		} else {
-			ret = ima_parse_compact_list(size, buf, default_func);
-			if (ret == size)
-				ret = 0;
-		}
-		goto out;
-	}
-
-	parser = lookup_lib(parser_lib_head, "parser",
-			    format_start, format_end - format_start);
-	if (!parser) {
-		printf("Cannot find a parser for %s\n", digest_list_filename);
-		ret = -ENOENT;
-		goto out;
-	}
-
-	ret = ((parser_func)parser->func)(fd, head, size, buf);
-out:
-	munmap(buf, size);
-	return ret;
-}
-
 static void end_digest_list_upload(int umount_sysfs, int umount_securityfs)
 {
 	if (umount_securityfs)
@@ -155,71 +82,97 @@ static void end_digest_list_upload(int umount_sysfs, int umount_securityfs)
 		umount(SYSFS_PATH);
 }
 
-static int process_lists(int dirfd, int fd, int save, struct list_head *head,
-			 enum compact_types type)
-{
-	struct dirent **digest_lists;
-	LIST_HEAD(parser_lib_head);
-	int ret, i, n;
-
-	n = scandirat(dirfd, ".", &digest_lists, filter[type], compare_lists);
-	if (n == -1) {
-		printf("Unable to access digest lists\n");
-		return -EACCES;
-	}
-
-	for (i = 0; i < n; i++) {
-		if (type == COMPACT_KEY) {
-			if (save)
-				continue;
-
-			ret = key_upload(dirfd, digest_lists[i]->d_name);
-			if (ret < 0) {
-				printf("Unable to add key from %s\n",
-				       digest_lists[i]->d_name);
-			}
-
-			continue;
-		}
-
-		ret = digest_list_upload(dirfd, fd, head, &parser_lib_head,
-					 digest_lists[i]->d_name);
-		if (ret)
-			printf("Failed to process %s\n",
-			       digest_lists[i]->d_name);
-	}
-
-	free_libs(&parser_lib_head);
-	for (i = 0; i < n; i++)
-		free(digest_lists[i]);
-
-	free(digest_lists);
-	return 0;
-}
-
 static void usage(char *progname)
 {
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
-	printf("\t-d <directory>: directory containing digest lists\n"
+	printf("\t-b <backup_dir>: specify backup dir\n"
+	       "\t-d <directory>: directory containing digest lists\n"
+	       "\t-f <filename>: filename in the digest list directory\n"
 	       "\t-o <file>: write converted digest list to a file\n"
+	       "\t-p <op>: specify parser operation:\n"
+	       "\t\tadd-digest: add IMA digest to kernel/output file\n"
+	       "\t\tadd-meta-digest: add EVM digest to kernel/output file\n"
+	       "\t\tadd-ima-xattr: set IMA xattr for files in the digest lists\n"
+	       "\t\trm-ima-xattr: remove IMA xattr for files in the digest lists\n"
+	       "\t\tadd-evm-xattr: set EVM xattr for files in the digest lists\n"
+	       "\t\trm-evm-xattr: remove EVM xattr for files in the digest lists\n"
+	       "\t\trm-infoflow-xattr: remove Infoflow xattr for files in the digest lists\n"
+	       "\t\tdump: display content of digest lists\n"
+	       "\t\tgen-ima-list: generate IMA digest list with digest list measurement\n"
+	       "\t\tcheck-meta: compare metadata between digest lists and filesystem\n"
+	       "\t\trepair-meta: set metadata from the digest lists to the filesystem\n"
+	       "\t-v: verbose mode\n"
 	       "\t-h: display help\n");
 }
 
 int main(int argc, char *argv[])
 {
-	int c, i, dirfd, fd = -1, ret = -EINVAL;
+	int c, i, dirfd, fd = -1, verbose = 0, ret = -EINVAL;
 	int mount_sysfs = 0, mount_securityfs = 0;
-	char *cur_dir = DEFAULT_DIR, *output = NULL;
+	char *cur_dir = DEFAULT_DIR, *output = NULL, *backup_dir = NULL;
+	enum parser_ops op = PARSER_OP_ADD_DIGEST;
+	char *digest_list_filename = NULL;
 	LIST_HEAD(list_head);
 
-	while ((c = getopt(argc, argv, "d:o:h")) != -1) {
+	while ((c = getopt(argc, argv, "b:d:o:p:f:vh")) != -1) {
 		switch (c) {
+		case 'b':
+			backup_dir = optarg;
+			break;
 		case 'd':
 			cur_dir = optarg;
 			break;
+		case 'f':
+			digest_list_filename = optarg;
+			break;
 		case 'o':
 			output = optarg;
+			break;
+		case 'p':
+			if (!strcmp(optarg, "add-digest")) {
+				op = PARSER_OP_ADD_DIGEST;
+			} else if (!strcmp(optarg, "update-digest")) {
+				op = PARSER_OP_UPDATE_DIGEST;
+				fd = -2;
+			} else if (!strcmp(optarg, "restore-files")) {
+				op = PARSER_OP_RESTORE_FILES;
+				fd = -2;
+			} else if (!strcmp(optarg, "add-meta-digest")) {
+				op = PARSER_OP_ADD_META_DIGEST;
+			} else if (!strcmp(optarg, "add-ima-xattr")) {
+				op = PARSER_OP_ADD_IMA_XATTR;
+				fd = -2;
+			} else if (!strcmp(optarg, "rm-ima-xattr")) {
+				op = PARSER_OP_REMOVE_IMA_XATTR;
+				fd = -2;
+			} else if (!strcmp(optarg, "add-evm-xattr")) {
+				op = PARSER_OP_ADD_EVM_XATTR;
+				fd = -2;
+			} else if (!strcmp(optarg, "rm-evm-xattr")) {
+				op = PARSER_OP_REMOVE_EVM_XATTR;
+				fd = -2;
+			} else if (!strcmp(optarg, "rm-infoflow-xattr")) {
+				op = PARSER_OP_REMOVE_INFOFLOW_XATTR;
+				fd = -2;
+			} else if (!strcmp(optarg, "dump")) {
+				op = PARSER_OP_DUMP;
+				fd = -2;
+			} else if (!strcmp(optarg, "gen-ima-list")) {
+				op = PARSER_OP_GEN_IMA_LIST;
+			} else if (!strcmp(optarg, "check-meta")) {
+				op = PARSER_OP_CHECK_META;
+				fd = -2;
+			} else if (!strcmp(optarg, "repair-meta")) {
+				op = PARSER_OP_REPAIR_META;
+				fd = -2;
+			} else {
+				printf("Invalid parser op %s\n", optarg);
+				return 1;
+			}
+			break;
+		case 'v':
+			verbose = 1;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -230,10 +183,21 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (op == PARSER_OP_UPDATE_DIGEST && output) {
+		printf("Output file cannot be specified for "
+		       "update-digest op\n");
+		return -EINVAL;
+	}
+
+	if (op == PARSER_OP_UPDATE_DIGEST && !backup_dir) {
+		printf("Backup dir not specified for update-digest op\n");
+		return -EINVAL;
+	}
+
 	dirfd = open(cur_dir, O_RDONLY | O_DIRECTORY);
 	if (dirfd < 0) {
 		printf("Unable to open %s, ret: %d\n", cur_dir, dirfd);
-		return dirfd;
+		goto out;
 	}
 
 	if (fd == -1) {
@@ -241,7 +205,7 @@ int main(int argc, char *argv[])
 			fd = init_digest_list_upload(&mount_sysfs,
 						     &mount_securityfs);
 		else
-			fd = open(output, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+			fd = open(output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
 		if (fd < 0) {
 			ret = -EACCES;
@@ -249,8 +213,20 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (op == PARSER_OP_GEN_IMA_LIST) {
+		ret = ima_copy_boot_aggregate(fd);
+		if (ret < 0)
+			return ret;
+
+		ret = ima_generate_entry(-1, fd, "", IMA_KEY_PATH);
+		if (ret < 0)
+			return ret;
+	}
+
 	for (i = 0; i < COMPACT__LAST; i++) {
-		ret = process_lists(dirfd, fd, (output != NULL), &list_head, i);
+		ret = process_lists(dirfd, fd, (output != NULL), verbose,
+				    &list_head, i, op, backup_dir, cur_dir,
+				    digest_list_filename);
 		if (ret < 0) {
 			printf("Cannot upload digest lists, ret: %d\n", ret);
 			goto out_close_fd;
@@ -269,5 +245,9 @@ out_close_fd:
 	end_digest_list_upload(mount_sysfs, mount_securityfs);
 out_close_dirfd:
 	close(dirfd);
+out:
+	if (op == PARSER_OP_ADD_META_DIGEST)
+		selinux_end_setup();
+
 	return ret;
 }

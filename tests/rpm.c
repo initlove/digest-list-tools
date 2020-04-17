@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2019-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -87,8 +87,8 @@ static int get_digests(int dirfd)
 			new->modifiers = 0;
 
 		if (new->modifiers) {
-			if (!(modes[i] & (S_IXUGO | S_ISUID | S_ISVTX)) &&
-			    (modes[i] & S_IWUGO))
+			if ((!(modes[i] & S_IXUGO) && (modes[i] & S_IWUGO)) ||
+			    !sizes[i])
 				new->modifiers = 0;
 		}
 
@@ -132,7 +132,7 @@ static int test_rpm_func(u8 *digest, enum hash_algo algo,
 
 static void test_rpm_parser(void **state)
 {
-	const char rpm_str[] = "rpm";
+	const char rpm_str[] = "rpm-test";
 	const char parser_str[] = "parser";
 	LIST_HEAD(list_head);
 	LIST_HEAD(lib_head);
@@ -152,13 +152,14 @@ static void test_rpm_parser(void **state)
 	assert_non_null(lib);
 
 	fd_compact_list = openat(dirfd, NEW_COMPACT_LIST, O_WRONLY | O_CREAT,
-				 0600);
+				 0644);
 	assert_return_code(fd_compact_list, 0);
 
 	ret = read_file_from_path(dirfd, RPM_HEADER, &buf, &size);
 	assert_return_code(ret, 0);
 
-	ret = ((parser_func)lib->func)(fd_compact_list, &list_head, size, buf);
+	ret = ((parser_func)lib->func)(fd_compact_list, &list_head, size, buf,
+				       PARSER_OP_ADD_DIGEST, NULL);
 	assert_return_code(ret, 0);
 
 	munmap(buf, size);
@@ -174,7 +175,7 @@ static void test_rpm_parser(void **state)
 	ret = read_file_from_path(dirfd, NEW_COMPACT_LIST, &buf, &size);
 	assert_return_code(ret, 0);
 
-	ret = ima_parse_compact_list(size, buf, test_rpm_func);
+	ret = ima_parse_compact_list(size, buf, test_rpm_func, NULL);
 	assert_return_code(ret, 0);
 
 	munmap(buf, size);

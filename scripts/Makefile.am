@@ -1,1 +1,1 @@
-bin_SCRIPTS=setup_ima_digest_lists setup_ima_digest_lists_demo xattr.awk
+bin_SCRIPTS=setup_ima_digest_lists setup_ima_digest_lists_demo

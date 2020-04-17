@@ -6,17 +6,20 @@
 # License.
 
 [Unit]
-Description=Execute setup_ima_digest_lists
+Description=Enter rescue mode
 DefaultDependencies=no
-After=local-fs.target
-Before=systemd-journal-flush.service systemd-user-sessions.service systemd-tmpfiles-setup.service
-ConditionPathExists=/.digestlist_state
+Wants=local-fs.target
+After=tmp.mount boot.mount boot.automount dracut-shutdown.service
 
 [Service]
-ExecStart=/usr/bin/setup_ima_digest_lists mutable
-Type=oneshot
-RemainAfterExit=Yes
-TimeoutSec=90s
-
-[Install]
-WantedBy=multi-user.target
+Environment=HOME=/root
+WorkingDirectory=-/root
+ExecStartPre=-/bin/plymouth --wait quit
+ExecStart=-/usr/lib/systemd/systemd-sulogin-shell rescue
+Type=idle
+StandardInput=tty-force
+StandardOutput=inherit
+StandardError=inherit
+KillMode=process
+IgnoreSIGPIPE=no
+SendSIGHUP=yes

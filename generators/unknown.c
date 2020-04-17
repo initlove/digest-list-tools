@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2019-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -8,17 +8,18 @@
  * published by the Free Software Foundation, version 2 of the
  * License.
  *
- * File: compact.c
- *      Generates compact digest lists.
+ * File: unknown.c
+ *      Create a digest list not included in the supplied compact list.
  */
 
+#include <errno.h>
 #include <fts.h>
 #include <pwd.h>
 #include <grp.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#include <time.h>
+#include <linux/magic.h>
+#include <linux/stat.h>
+#include <linux/fs.h>
 #include <sys/mman.h>
 #include <sys/xattr.h>
 #include <sys/capability.h>
@@ -37,32 +38,25 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		    struct stat *st, struct list_struct *list,
 		    struct list_struct *list_file, enum hash_algo algo,
 		    enum hash_algo ima_algo, bool tlv, bool gen_list,
-		    bool include_lsm_label, bool root_cred, bool set_ima_xattr,
+		    bool include_lsm_label, bool root_cred, int set_ima_xattr,
 		    char *alt_root, char *caps)
 {
 	cap_t c;
-	u8 ima_xattr[2048];
+	struct ima_digest *found_digest;
 	struct vfs_cap_data rawvfscap;
+	u8 ima_xattr[2 + SHA512_DIGEST_SIZE];
 	u8 ima_digest[SHA512_DIGEST_SIZE];
 	u8 evm_digest[SHA512_DIGEST_SIZE];
 	u8 *digest = ima_digest;
 	char *obj_label = NULL;
 	u8 *caps_bin = NULL;
-	LIST_HEAD(items);
 	struct stat s;
+	LIST_HEAD(items);
 	int gen_ima_xattr = 1;
 	int ret, ima_xattr_len, obj_label_len = 0, caps_bin_len = 0;
 
 	if (!S_ISREG(st->st_mode))
 		return -ENOENT;
-
-	if (gen_list) {
-		ret = write_check(fd, path, strlen(path));
-		if (!ret)
-			ret = write_check(fd, "\n", 1);
-
-		return ret;
-	}
 
 	if (root_cred) {
 		memcpy(&s, st, sizeof(s));
@@ -75,11 +69,9 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 	    st->st_size)
 		modifiers |= (1 << COMPACT_MOD_IMMUTABLE);
 
-	ret = calc_file_digest(digest, -1, path, algo);
-	if (ret < 0) {
-		printf("Cannot calculate digest of %s\n", path);
-		goto out;
-	}
+	ret = calc_file_digest(ima_digest, -1, path, algo);
+	if (ret < 0)
+		return ret;
 
 	if (type == COMPACT_METADATA) {
 		ima_xattr_len = getxattr(path, XATTR_NAME_IMA, NULL, 0);
@@ -100,7 +92,7 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 				return ret;
 		}
 
-		if (include_lsm_label == 1)
+		if (include_lsm_label)
 			obj_label_len = getxattr(path, XATTR_NAME_SELINUX,
 						 NULL, 0);
 		if (obj_label_len > 0) {
@@ -175,6 +167,20 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		digest = evm_digest;
 	}
 
+	found_digest = ima_lookup_digest(digest, algo);
+	if (found_digest) {
+		ret = -EEXIST;
+		goto out;
+	}
+
+	if (gen_list) {
+		ret = write_check(fd, path, strlen(path));
+		if (!ret)
+			ret = write_check(fd, "\n", 1);
+
+		return ret;
+	}
+
 	if (!tlv) {
 		if (type == COMPACT_METADATA && list_file) {
 			ret = compact_list_add_digest(fd, list_file,
@@ -206,19 +212,6 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		goto out_free_items;
 
 	ret = compact_list_tlv_add_items(fd, list, &items);
-
-	if (ret < 0) {
-		printf("Cannot add digest to compact list\n");
-		goto out_free_items;
-	}
-
-	if (algo != ima_algo && getuid() == 0) {
-		ret = write_ima_xattr(-1, path, NULL, 0, NULL, 0, algo);
-		if (ret < 0) {
-			printf("Cannot write xattr to %s\n", path);
-			goto out_free_items;
-		}
-	}
 out_free_items:
 	compact_list_tlv_free_items(&items);
 out:
@@ -232,27 +225,33 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	      u16 modifiers, enum hash_algo algo, enum hash_algo ima_algo,
 	      bool tlv, char *alt_root)
 {
-	char filename[NAME_MAX + 1], *basename = NULL, *link = NULL;
-	char path[PATH_MAX], *path_list = NULL, *data_ptr, *line_ptr, *attr_ptr;
-	char *path_ptr = NULL, *gen_list_path = NULL;
-	struct list_struct *list = NULL, *list_file = NULL;
 	struct path_struct *cur, *cur_i, *cur_e;
-	LIST_HEAD(list_head);
 	FTS *fts = NULL;
 	FTSENT *ftsent;
-	struct stat st;
+	char *paths[2] = { "/", NULL };
+	struct list_struct *list = NULL, *list_file = NULL;
+	char filename[NAME_MAX + 1];
+	char path[PATH_MAX];
+	char *digest_lists_dir = NULL, *path_list = NULL, *gen_list_path = NULL;
+	char *data_ptr, *line_ptr, *attr_ptr;
 	void *data;
 	loff_t size;
+	time_t t = time(NULL);
 	bool unlink = true;
-	char *paths[2] = { NULL, NULL };
+	struct tm tm;
+	struct stat st;
+	LIST_HEAD(list_head);
 	char *attrs[ATTR__LAST];
 	struct passwd *pwd;
 	struct group *grp;
-	int fts_flags = (FTS_PHYSICAL | FTS_COMFOLLOW | FTS_NOCHDIR | FTS_XDEV);
-	int include_ima_digests = 0, only_executables = 0, set_ima_xattr = 0;
-	int ret = 0, fd, prefix_len, include_lsm_label = 0, include_file = 0;
+	int include_ima_digests = 0, only_executables = 0, root_cred = 0;
+	int include_path = 0, include_file = 0, set_ima_xattr = 0;
 	int path_list_ext = 0;
-	int use_path_list_filename = 0, root_cred = 0, include_path = 0, i;
+	int fts_flags = (FTS_PHYSICAL | FTS_COMFOLLOW | FTS_NOCHDIR | FTS_XDEV);
+	int ret, i, digest_lists_dirfd, fd, prefix_len, include_lsm_label = 0;
+
+	if (pos == -1)
+		pos = 0;
 
 	list_for_each_entry(cur, head_in, list) {
 		if (cur->path[1] != ':') {
@@ -262,6 +261,8 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 
 		if (cur->path[0] == 'i')
 			include_ima_digests = 1;
+		if (cur->path[0] == 'D')
+			digest_lists_dir = &cur->path[2];
 		if (cur->path[0] == 'L')
 			path_list = &cur->path[2];
 		if (cur->path[0] == 'M')
@@ -276,14 +277,17 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		}
 		if (cur->path[0] == 'e')
 			only_executables = 1;
-		if (cur->path[0] == 'u')
-			use_path_list_filename = 1;
 		if (cur->path[0] == 'r')
 			root_cred = 1;
 		if (cur->path[0] == 'F')
 			include_path = 1;
 		if (cur->path[0] == 'x')
 			set_ima_xattr = 1;
+	}
+
+	if (!digest_lists_dir) {
+		pr_err("Digest lists directory not specified\n");
+		return -EINVAL;
 	}
 
 	if (path_list) {
@@ -304,7 +308,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 				while (i < ATTR__LAST &&
 				       (attrs[i] = strsep(&attr_ptr, "|")))
 						i++;
-				if (i != ATTR__LAST)
+				if (i < ATTR__LAST)
 					continue;
 			}
 
@@ -316,49 +320,50 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			if (ret < 0)
 				return ret;
 		}
-
-		path_ptr = path_list;
 	}
 
-	list_for_each_entry(cur, head_in, list) {
-		if (cur->path[0] != 'I')
-			continue;
-
-		if (!use_path_list_filename || !path_list)
-			path_ptr = &cur->path[2];
-		break;
-	}
-
-	if (!path_ptr) {
-		printf("Input path not specified\n");
-		return -EINVAL;
-	}
-
-	if (!gen_list_path) {
-		basename = strrchr(path_ptr, '/');
-		if (!basename)
-			basename = path_ptr;
-		else
-			basename++;
-
-		prefix_len = gen_filename_prefix(filename, sizeof(filename),
-					pos, tlv ? FORMAT_TLV : FORMAT, type);
-		snprintf(filename + prefix_len, sizeof(filename) - prefix_len,
-			 "%s", basename);
+	digest_lists_dirfd = open(digest_lists_dir, O_RDONLY | O_DIRECTORY);
+	if (digest_lists_dirfd < 0) {
+		pr_err("Unable to open %s, ret: %d\n", digest_lists_dir,
+		       digest_lists_dirfd);
+		return digest_lists_dirfd;
 	}
 
 	if (type == COMPACT_METADATA && include_lsm_label) {
 		ret = selinux_init_setup();
 		if (ret)
-			return ret;
+			goto out;
 	}
 
-	if (!gen_list_path)
+	for (i = 0; i < COMPACT__LAST; i++) {
+		ret = process_lists(digest_lists_dirfd, -1, 0, 0, &list_head, i,
+				    (type == COMPACT_METADATA) ?
+				    PARSER_OP_ADD_META_DIGEST_TO_HTABLE :
+				    PARSER_OP_ADD_DIGEST_TO_HTABLE, NULL,
+				    digest_lists_dir, filename);
+		if (ret < 0)
+			goto out_selinux;
+	}
+
+	compact_list_flush_all(-1, &list_head);
+
+	if (!gen_list_path) {
+		tm = *localtime(&t);
+
+		prefix_len = gen_filename_prefix(filename, sizeof(filename),
+					pos, tlv ? FORMAT_TLV : FORMAT, type);
+		snprintf(filename + prefix_len, sizeof(filename) - prefix_len,
+			"%04d%02d%02d_%02d%02d%02d", tm.tm_year + 1900,
+			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+			tm.tm_sec);
+
 		fd = openat(dirfd, filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	else
+	} else {
 		fd = openat(-1, gen_list_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	}
+
 	if (fd < 0) {
-		printf("Cannot open %s\n", filename);
+		pr_err("Cannot open %s\n", filename);
 		ret = -EACCES;
 		goto out_selinux;
 	}
@@ -393,10 +398,8 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		paths[0] = &cur->path[2];
 
 		fts = fts_open(paths, fts_flags, NULL);
-		if (!fts) {
-			ret = -EACCES;
+		if (!fts)
 			goto out_close;
-		}
 
 		while ((ftsent = fts_read(fts)) != NULL) {
 			switch (ftsent->fts_info) {
@@ -444,18 +447,16 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					continue;
 
 				ret = add_file(dirfd, fd, ftsent->fts_path,
-					       type, modifiers,
-					       path_list_ext ? &st :
-					       ftsent->fts_statp, list,
-					       list_file, algo, ima_algo, tlv,
-					       gen_list_path != NULL,
-					       include_lsm_label, root_cred,
-					       set_ima_xattr, alt_root,
-					       cur->attrs[4]);
+					type, modifiers, path_list_ext ?
+					&st : ftsent->fts_statp,
+					list, list_file, algo, ima_algo, tlv,
+					gen_list_path != NULL,
+					include_lsm_label, root_cred, set_ima_xattr,
+					alt_root, cur->attrs[4]);
 				if (!ret)
 					unlink = false;
-				if (ret < 0 && ret != -ENOENT &&
-				    ret != -ENODATA)
+				else if (ret < 0 && ret != -EEXIST &&
+					 ret != -ENOENT && ret != -ENODATA)
 					goto out_fts_close;
 
 				break;
@@ -470,8 +471,8 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 
 	ret = compact_list_flush_all(fd, &list_head);
 	if (ret < 0) {
-		printf("Cannot write digest list to %s\n", filename);
-		goto out_close;
+		pr_err("Cannot write digest list to %s\n", filename);
+		goto out_fts_close;
 	}
 
 	if (!unlink && !gen_list_path)
@@ -482,18 +483,12 @@ out_fts_close:
 out_close:
 	close(fd);
 
-	if (ret < 0 || unlink) {
+	if (ret < 0 || unlink)
 		unlinkat(dirfd, filename, 0);
-	} else if (!gen_list_path) {
-		if (!tlv && !strcmp(basename, "upload_digest_lists")) {
-			link = strchr(strchr(filename, '-') + 1, '-') + 1;
-			unlinkat(dirfd, link, 0);
-			ret = symlinkat(filename, dirfd, link);
-		}
-	}
 out_selinux:
 	if (type == COMPACT_METADATA && include_lsm_label)
 		selinux_end_setup();
-
+out:
+	close(digest_lists_dirfd);
 	return ret;
 }

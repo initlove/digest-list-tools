@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -19,8 +19,12 @@
 
 int write_ima_xattr(int dirfd, char *path, u8 *keyid, size_t keyid_len,
 		    u8 *sig, size_t sig_len, enum hash_algo algo);
-int read_ima_xattr(int dirfd, char *path, u8 **buf,
-		   u8 **keyid, size_t *keyid_len,
-		   u8 **sig, size_t *sig_len, enum hash_algo *algo);
+int parse_ima_xattr(u8 *buf, size_t buf_len, u8 **keyid, size_t *keyid_len,
+		    u8 **sig, size_t *sig_len, enum hash_algo *algo);
+int read_ima_xattr(int dirfd, char *path, u8 **buf, size_t *buf_len,
+		   u8 **keyid, size_t *keyid_len, u8 **sig, size_t *sig_len,
+		   enum hash_algo *algo);
+int gen_write_ima_xattr(u8 *buf, int *buf_len, char *path, u8 algo, u8 *digest,
+			bool immutable, bool write);
 
 #endif /*_XATTR_H*/

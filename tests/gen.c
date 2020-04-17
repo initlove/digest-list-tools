@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2019-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -29,7 +29,7 @@ static void test_gen(void **state)
 	if (fork() == 0) {
 		execlp("src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "append", "-f", "compact",
-		       "-i", "src/upload_digest_lists", "-d", "test", NULL);
+		       "-i", "I:src/upload_digest_lists", "-d", "test", NULL);
 	}
 
 	wait(NULL);
@@ -40,7 +40,7 @@ static void test_gen(void **state)
 	if (fork() == 0) {
 		execlp("src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "add", "-f", "compact", "-p", "0",
-		       "-i", "src/upload_digest_lists", "-d", "test", NULL);
+		       "-i", "I:src/upload_digest_lists", "-d", "test", NULL);
 	}
 
 	wait(NULL);

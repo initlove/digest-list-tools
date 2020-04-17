@@ -44,6 +44,7 @@ AC_PROG_LIBTOOL
 # Checks for libraries.
 AC_CHECK_LIB(rpm, headerGet,[rpm=yes], [rpm=no], [])
 AC_CHECK_LIB([crypto], [SHA256_Init], [crypto=yes], [crypto=no], [])
+AC_CHECK_LIB([cap], [cap_from_text], [cap=yes], [cap=no], [])
 
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h stdlib.h string.h unistd.h])
@@ -66,7 +67,6 @@ PKG_CHECK_EXISTS(cmocka,
                   will not be built])])
 
 AM_CONDITIONAL([RPM], [test "$rpm" = yes])
-AM_CONDITIONAL([CRYPTO], [test "$crypto" = yes])
 AM_CONDITIONAL([CMOCKA], [test "$cmocka" = yes])
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -75,6 +75,7 @@ AC_C_INLINE
 AC_TYPE_INT32_T
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
+AC_CHECK_SIZEOF(long)
 
 # Checks for library functions.
 AC_FUNC_MALLOC

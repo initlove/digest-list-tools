@@ -1,3 +1,14 @@
+2020-04-17  Roberto Sassu <roberto.sassu@huawei.com>
+	version 0.3.90
+	* TLV compact list
+	* unknown generator
+	* digest list of metadata
+
+2019-03-19  Roberto Sassu <roberto.sassu@huawei.com>
+	version 0.3
+	* refactored code
+	* tests
+
 2018-04-05  Roberto Sassu <roberto.sassu@huawei.com>
 	version 0.2
 	* PGP signatures

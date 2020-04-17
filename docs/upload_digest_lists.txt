@@ -12,9 +12,28 @@ lists to a file.
 
 
 OPTIONS
+-b <backup_dir>: specify backup dir
+
 -d <directory>: directory containing digest lists
 
+-f <filename>: filename in the digest list directory
+
 -o <file>: write converted digest list to a file
+
+-p <op>: specify parser operation:
+	 add-digest: add IMA digest to kernel/output file
+	 add-meta-digest: add EVM digest to kernel/output file
+	 add-ima-xattr: set IMA xattr for files in the digest lists
+	 rm-ima-xattr: remove IMA xattr for files in the digest lists
+	 add-evm-xattr: set EVM xattr for files in the digest lists
+	 rm-evm-xattr: remove EVM xattr for files in the digest lists
+	 rm-infoflow-xattr: remove Infoflow xattr for files in the digest lists
+	 dump: display content of digest lists
+	 gen-ima-list: generate IMA digest list with digest list measurement
+	 check-meta: compare metadata between digest lists and filesystem
+	 repair-meta: set metadata from the digest lists to the filesystem
+
+-v: verbose mode
 
 -h: display help
 
@@ -35,6 +54,6 @@ Written by Roberto Sassu, <roberto.sassu at huawei.com>.
 
 
 COPYING
-Copyright (C) 2018,2019 Huawei Technologies Duesseldorf GmbH. Free use of
+Copyright (C) 2018-2020 Huawei Technologies Duesseldorf GmbH. Free use of
 this software is granted under the terms of the GNU Public License 2.0
 (GPLv2).

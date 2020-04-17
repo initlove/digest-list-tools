@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -32,6 +32,7 @@
 
 #define MAX_SIGNATURE_SIZE 1024
 
+int calc_digest(u8 *digest, void *data, u64 len, enum hash_algo algo);
 int calc_file_digest(u8 *digest, int dirfd, char *path, enum hash_algo algo);
 int sign_files(int dirfd, struct list_head *head, char *key_path,
 	       char *keypass, enum hash_algo algo);
@@ -48,5 +49,7 @@ struct key_struct *new_key(struct list_head *head, int dirfd, char *key_path,
 struct key_struct *lookup_key(struct list_head *head, int dirfd, char *key_path,
 			      u8 *keyid);
 int verify_file(struct list_head *head, int dirfd, char *filename);
+int verify_sig(struct list_head *head, int dirfd, u8 *sig, int sig_len,
+               u8 *digest, enum hash_algo algo);
 
 #endif /*_CRYPTO_H*/

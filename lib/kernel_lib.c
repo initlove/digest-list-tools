@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013 Dmitry Kasatkin <d.kasatkin@samsung.com>
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -115,50 +115,105 @@ int default_func(u8 *digest, enum hash_algo algo, enum compact_types type,
 	return 0;
 }
 
+struct ima_h_table ima_digests_htable = {
+	.len = 0,
+	.queue[0 ... IMA_MEASURE_HTABLE_SIZE - 1] = HLIST_HEAD_INIT
+};
+
+/*********************
+ * Get/add functions *
+ *********************/
+struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo)
+{
+	struct ima_digest *d = NULL;
+	int digest_len = hash_digest_size[algo];
+	unsigned int key = ima_hash_key(digest);
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(d, &ima_digests_htable.queue[key], hnext)
+		if (d->algo == algo && !memcmp(d->digest, digest, digest_len))
+			break;
+
+	rcu_read_unlock();
+	return d;
+}
+
+int ima_add_digest_data_entry_kernel(u8 *digest, enum hash_algo algo,
+				     enum compact_types type, u16 modifiers)
+{
+	struct ima_digest *d;
+	int digest_len = hash_digest_size[algo];
+	unsigned int key = ima_hash_key(digest);
+
+	d = ima_lookup_digest(digest, algo);
+	if (d) {
+		d->modifiers |= modifiers;
+		return -EEXIST;
+	}
+
+	d = kmalloc(sizeof(*d) + digest_len, GFP_KERNEL);
+	if (d == NULL)
+		return -ENOMEM;
+
+	d->algo = algo;
+	d->type = type;
+	d->modifiers = modifiers;
+
+	memcpy(d->digest, digest, digest_len);
+	hlist_add_head_rcu(&d->hnext, &ima_digests_htable.queue[key]);
+	atomic_long_inc(&ima_digests_htable.len);
+	return 0;
+}
+
 /* from ima_digest_list.c */
 int ima_parse_compact_list(loff_t size, void *buf,
-			   add_digest_func ima_add_digest_data_entry)
+			   add_digest_func ima_add_digest_data_entry,
+			   enum hash_algo *algo)
 {
 	u8 *digest;
 	void *bufp = buf, *bufendp = buf + size;
-	struct compact_list_hdr *hdr;
+	struct compact_list_hdr hdr, *hdrp;
 	size_t digest_len;
 	int ret, i;
 
 	while (bufp < bufendp) {
-		if (bufp + sizeof(*hdr) > bufendp) {
+		if (bufp + sizeof(hdr) > bufendp) {
 			pr_err("compact list, invalid data\n");
 			return -EINVAL;
 		}
 
-		hdr = bufp;
+		hdrp = bufp;
+		memcpy(&hdr, hdrp, sizeof(hdr));
 
-		if (hdr->version != 1) {
+		if (hdr.version != 1) {
 			pr_err("compact list, unsupported version\n");
 			return -EINVAL;
 		}
 
 		if (ima_canonical_fmt) {
-			hdr->type = le16_to_cpu(hdr->type);
-			hdr->modifiers = le16_to_cpu(hdr->modifiers);
-			hdr->algo = le16_to_cpu(hdr->algo);
-			hdr->count = le32_to_cpu(hdr->count);
-			hdr->datalen = le32_to_cpu(hdr->datalen);
+			hdr.type = le16_to_cpu(hdr.type);
+			hdr.modifiers = le16_to_cpu(hdr.modifiers);
+			hdr.algo = le16_to_cpu(hdr.algo);
+			hdr.count = le32_to_cpu(hdr.count);
+			hdr.datalen = le32_to_cpu(hdr.datalen);
 		}
 
-		if (hdr->algo >= HASH_ALGO__LAST)
+		if (hdr.algo >= HASH_ALGO__LAST)
 			return -EINVAL;
 
-		digest_len = hash_digest_size[hdr->algo];
+		if (algo)
+			*algo = hdr.algo;
 
-		if (hdr->type >= COMPACT__LAST) {
-			pr_err("compact list, invalid type %d\n", hdr->type);
+		digest_len = hash_digest_size[hdr.algo];
+
+		if (hdr.type >= COMPACT__LAST) {
+			pr_err("compact list, invalid type %d\n", hdr.type);
 			return -EINVAL;
 		}
 
-		bufp += sizeof(*hdr);
+		bufp += sizeof(hdr);
 
-		for (i = 0; i < hdr->count; i++) {
+		for (i = 0; i < hdr.count; i++) {
 			if (bufp + digest_len > bufendp) {
 				pr_err("compact list, invalid data\n");
 				return -EINVAL;
@@ -167,15 +222,15 @@ int ima_parse_compact_list(loff_t size, void *buf,
 			digest = bufp;
 			bufp += digest_len;
 
-			ret = ima_add_digest_data_entry(digest, hdr->algo,
-							hdr->type,
-							hdr->modifiers);
+			ret = ima_add_digest_data_entry(digest, hdr.algo,
+							hdr.type,
+							hdr.modifiers);
 			if (ret < 0 && ret != -EEXIST)
 				return ret;
 		}
 
-		if (i != hdr->count ||
-		    bufp != (void *)hdr + sizeof(*hdr) + hdr->datalen) {
+		if (i != hdr.count ||
+		    bufp != (void *)hdrp + sizeof(hdr) + hdr.datalen) {
 			pr_err("compact list, invalid data\n");
 			return -EINVAL;
 		}

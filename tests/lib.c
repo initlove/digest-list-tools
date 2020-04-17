@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2019-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -21,9 +21,9 @@ static void test_lib_lookup(void **state)
 	LIST_HEAD(lib_head);
 	struct lib *first_lib, *second_lib, *third_lib;
 	const char parser_str[] = "parser";
-	const char rpm_str[] = "rpm";
-	const char rpm_db_str[] = "rpm+db-test";
-	const char ima_ng_str[] = "ima+ima_ng-test";
+	const char rpm_str[] = "rpm-test";
+	const char rpm_db_str[] = "rpm-test+db";
+	const char ima_ng_str[] = "compact_tlv-test";
 
 	first_lib = lookup_lib(&lib_head, parser_str, rpm_str,
 			       sizeof(rpm_str) - 1);

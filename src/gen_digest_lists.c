@@ -2,7 +2,7 @@
  * Copyright (C) 2011 Nokia Corporation
  * Copyright (C) 2011,2012,2013 Intel Corporation
  * Copyright (C) 2013,2014 Samsung Electronics
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Authors:
  * Roberto Sassu <roberto.sassu@huawei.com>
@@ -150,7 +150,8 @@ static void usage(char *progname)
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
 	printf("\t-d <directory>: directory containing digest lists\n"
-	       "\t-f <format>: format of the input file\n"
+	       "\t-f <format>: format of the input file, "
+	             "syntax: <generator ID>+<generator func>\n"
 	       "\t-i <path>: path of the input file\n"
 	       "\t-o <operation>: operation to do\n"
 	       "\t\t-add: insert a new digest list at the position specified\n"
@@ -159,29 +160,34 @@ static void usage(char *progname)
 	       "\t\t-sign: sign a digest list\n"
 	       "\t-p <position>: position in the directory to add/remove\n"
 	       "\t-t <compact id>: type of compact list to generate\n"
+	       "\t-T: generate a TLV compact list\n"
 	       "\t-m <modifiers>: compact list modifiers separated by comma\n"
-	       "\t-a <algorithm>: hash algorithm\n"
+	       "\t-a <algorithm>: digest list hash algorithm\n"
+	       "\t-I <algo>: IMA hash algorithm\n"
 	       "\t-s: sign generated digest lists\n"
 	       "\t-k <key>: key to sign\n"
 	       "\t-w [<key password>]: key password or prompt\n"
+	       "\t-A <alt root>: alternative root for SELinux labeling\n"
 	       "\t-h: display help\n");
 }
 
 int main(int argc, char **argv)
 {
-	char *cur_dir = DEFAULT_DIR, *input_fmt = NULL;
+	char *cur_dir = DEFAULT_DIR, *input_fmt = NULL, *alt_root = NULL;
 	char *modifiers_opt, *modifiers_ptr, *modifiers_str;
 	char keypass[64], *keypass_ptr = keypass, *key_path = NULL;
 	enum dir_ops op = OP__LAST;
 	enum compact_types type = COMPACT__LAST;
 	enum hash_algo algo = HASH_ALGO_SHA256;
+	enum hash_algo ima_algo = HASH_ALGO_SHA256;
 	LIST_HEAD(generator_lib_head);
 	LIST_HEAD(head_in);
 	LIST_HEAD(head_out);
 	struct lib *generator;
+	bool tlv = false;
 	int ret = -EINVAL, c, i, dirfd, sign = 0, pos = -1, modifiers = 0;
 
-	while ((c = getopt(argc, argv, "d:f:i:o:p:t:m:a:sk:w:h")) != -1) {
+	while ((c = getopt(argc, argv, "d:f:i:o:p:t:Tm:a:I:sk:w:A:h")) != -1) {
 		switch (c) {
 		case 'd':
 			cur_dir = optarg;
@@ -190,7 +196,7 @@ int main(int argc, char **argv)
 			input_fmt = optarg;
 			break;
 		case 'i':
-			if (add_path_struct(optarg, &head_in) < 0)
+			if (add_path_struct(optarg, NULL, &head_in) < 0)
 				goto out;
 			break;
 		case 'o':
@@ -221,6 +227,9 @@ int main(int argc, char **argv)
 			}
 			type = i;
 			break;
+		case 'T':
+			tlv = true;
+			break;
 		case 'm':
 			modifiers_ptr = modifiers_opt = strdup(optarg);
 			while ((modifiers_str = strsep(&modifiers_ptr, ","))) {
@@ -235,6 +244,7 @@ int main(int argc, char **argv)
 			free(modifiers_opt);
 			break;
 		case 'a':
+		case 'I':
 			for (i = 0; i < HASH_ALGO__LAST; i++)
 				if (!strcmp(optarg, hash_algo_name[i]))
 					break;
@@ -242,7 +252,10 @@ int main(int argc, char **argv)
 				printf("Unknown hash algorithm %s\n", optarg);
 				goto out;
 			}
-			algo = i;
+			if (c == 'I')
+				ima_algo = i;
+			else
+				algo = i;
 			break;
 		case 's':
 			sign = 1;
@@ -256,6 +269,9 @@ int main(int argc, char **argv)
 			else
 				keypass_ptr = get_password(keypass,
 							   sizeof(keypass));
+			break;
+		case 'A':
+			alt_root = optarg;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -275,11 +291,6 @@ int main(int argc, char **argv)
 
 	if ((op != OP_SIGN || list_empty(&head_in)) && type == COMPACT__LAST) {
 		printf("Compact type not specified\n");
-		goto out;
-	}
-
-	if (op == OP_ADD && pos == -1) {
-		printf("Position in the digest list directory not specified\n");
 		goto out;
 	}
 
@@ -312,7 +323,8 @@ int main(int argc, char **argv)
 		goto out_sign;
 	}
 
-	ret = process_dir(dirfd, op, type, &pos);
+	if (op != OP_ADD || pos != -1)
+		ret = process_dir(dirfd, op, type, &pos);
 
 	if (op == OP_REMOVE)
 		goto out_close;
@@ -328,7 +340,8 @@ int main(int argc, char **argv)
 		modifiers |= COMPACT_MOD_IMMUTABLE;
 
 	ret = ((generator_func)generator->func)(dirfd, pos, &head_in, &head_out,
-						type, modifiers, algo);
+						type, modifiers, algo, ima_algo,
+						tlv, alt_root);
 	if (ret < 0) {
 		printf("Generator %s returned %d\n", input_fmt, ret);
 		goto out_free;

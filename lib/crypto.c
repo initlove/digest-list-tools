@@ -2,7 +2,7 @@
  * Copyright (C) 2011 Nokia Corporation
  * Copyright (C) 2011,2012,2013 Intel Corporation
  * Copyright (C) 2013,2014 Samsung Electronics
- * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2020 Huawei Technologies Duesseldorf GmbH
  *
  * Authors:
  * Dmitry Kasatkin <dmitry.kasatkin@nokia.com>
@@ -23,7 +23,7 @@
 #include "xattr.h"
 
 
-static int calc_digest(u8 *digest, void *data, int len, enum hash_algo algo)
+int calc_digest(u8 *digest, void *data, u64 len, enum hash_algo algo)
 {
 	EVP_MD_CTX *mdctx;
 	const EVP_MD *md;
@@ -58,7 +58,7 @@ out:
 
 int calc_file_digest(u8 *digest, int dirfd, char *path, enum hash_algo algo)
 {
-	void *data;
+	void *data = MAP_FAILED;
 	struct stat st;
 	int fd, ret = 0;
 
@@ -77,10 +77,12 @@ int calc_file_digest(u8 *digest, int dirfd, char *path, enum hash_algo algo)
 	if (fd < 0)
 		return -EACCES;
 
-	data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (data == MAP_FAILED) {
-		ret = -ENOMEM;
-		goto out;
+	if (st.st_size) {
+		data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+		if (data == MAP_FAILED) {
+			ret = -ENOMEM;
+			goto out;
+		}
 	}
 
 	ret = calc_digest(digest, data, st.st_size, algo);
@@ -307,26 +309,44 @@ int sign_files(int dirfd, struct list_head *head, char *key_path,
 	return ret;
 }
 
-int verify_file(struct list_head *head, int dirfd, char *filename)
+static int verify_common(struct list_head *head, int dirfd, char *filename,
+			 u8 *sig_in, int sig_in_len, u8 *digest_in,
+			 enum hash_algo algo_in)
 {
-	u8 *buf, *keyid, *sig;
+	u8 *buf = NULL, *keyid, *sig;
 	u8 digest[SHA512_DIGEST_SIZE], out[MAX_SIGNATURE_SIZE];
 	enum hash_algo algo;
 	struct key_struct *k;
 	const struct RSA_ASN1_template *asn1;
-	size_t keyid_len, sig_len, len;
+	size_t buf_len, keyid_len, sig_len, len;
 	int ret;
 
-	ret = read_ima_xattr(dirfd, filename, &buf, &keyid, &keyid_len,
-			     &sig, &sig_len, &algo);
-	if (ret < 0) {
-		printf("Cannot read security.ima xattr: %d\n", ret);
-		return ret;
-	}
+	if (filename) {
+		ret = read_ima_xattr(dirfd, filename, &buf, &buf_len, &keyid,
+				     &keyid_len, &sig, &sig_len, &algo);
+		if (ret < 0) {
+			printf("Cannot read security.ima xattr: %d\n", ret);
+			return ret;
+		}
 
-	ret = calc_file_digest(digest, dirfd, filename, algo);
-	if (ret < 0)
-		goto out;
+		ret = calc_file_digest(digest, dirfd, filename, algo);
+		if (ret < 0)
+			goto out;
+	} else {
+		ret = parse_ima_xattr(sig_in, sig_in_len, &keyid, &keyid_len,
+				      &sig, &sig_len, &algo);
+		if (ret) {
+			printf("Cannot parse security.ima xattr: %d\n", ret);
+			return ret;
+		}
+
+		if (algo != algo_in) {
+			printf("Hash algorithm mismatch\n");
+			return -EINVAL;
+		}
+
+		memcpy(digest, digest_in, hash_digest_size[algo]);
+	}
 
 	k = lookup_key(head, dirfd, NULL, keyid);
 	if (!k) {
@@ -361,4 +381,16 @@ int verify_file(struct list_head *head, int dirfd, char *filename)
 out:
 	free(buf);
 	return ret;
+}
+
+int verify_file(struct list_head *head, int dirfd, char *filename)
+{
+	return verify_common(head, dirfd, filename, NULL, 0, NULL,
+			     HASH_ALGO__LAST);
+}
+
+int verify_sig(struct list_head *head, int dirfd, u8 *sig, int sig_len,
+	       u8 *digest, enum hash_algo algo)
+{
+	return verify_common(head, dirfd, NULL, sig, sig_len, digest, algo);
 }
