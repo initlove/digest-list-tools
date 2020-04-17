@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013 Dmitry Kasatkin <d.kasatkin@samsung.com>
- * Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -12,38 +12,12 @@
  * File: kernel_lib.c
  *      Libraries from the Linux kernel.
  */
+
+#include <errno.h>
+
 #include "kernel_lib.h"
+#include "xattr.h"
 
-/* from lib/bitmap.c */
-void bitmap_zero(unsigned long *dst, unsigned int nbits)
-{
-	if (small_const_nbits(nbits))
-		*dst = 0UL;
-	else {
-		unsigned int len = BITS_TO_LONGS(nbits) * sizeof(unsigned long);
-		memset(dst, 0, len);
-	}
-}
-
-void bitmap_set(unsigned long *map, unsigned int start, int len)
-{
-	unsigned long *p = map + BIT_WORD(start);
-	const unsigned int size = start + len;
-	int bits_to_set = BITS_PER_LONG - (start % BITS_PER_LONG);
-	unsigned long mask_to_set = BITMAP_FIRST_WORD_MASK(start);
-
-	while (len - bits_to_set >= 0) {
-		*p |= mask_to_set;
-		len -= bits_to_set;
-		bits_to_set = BITS_PER_LONG;
-		mask_to_set = ~0UL;
-		p++;
-	}
-	if (len) {
-		mask_to_set &= BITMAP_LAST_WORD_MASK(size);
-		*p |= mask_to_set;
-	}
-}
 
 /* from crypto/hash_info.c */
 const char *const hash_algo_name[HASH_ALGO__LAST] = {
@@ -127,4 +101,85 @@ int hex2bin(u8 *dst, const char *src, size_t count)
 		*dst++ = (hi << 4) | lo;
 	}
 	return 0;
+}
+
+#ifdef __BIG_ENDIAN__
+bool ima_canonical_fmt = true;
+#else
+bool ima_canonical_fmt = false;
+#endif
+
+int default_func(u8 *digest, enum hash_algo algo, enum compact_types type,
+                 u16 modifiers)
+{
+	return 0;
+}
+
+/* from ima_digest_list.c */
+int ima_parse_compact_list(loff_t size, void *buf,
+			   add_digest_func ima_add_digest_data_entry)
+{
+	u8 *digest;
+	void *bufp = buf, *bufendp = buf + size;
+	struct compact_list_hdr *hdr;
+	size_t digest_len;
+	int ret, i;
+
+	while (bufp < bufendp) {
+		if (bufp + sizeof(*hdr) > bufendp) {
+			pr_err("compact list, invalid data\n");
+			return -EINVAL;
+		}
+
+		hdr = bufp;
+
+		if (hdr->version != 1) {
+			pr_err("compact list, unsupported version\n");
+			return -EINVAL;
+		}
+
+		if (ima_canonical_fmt) {
+			hdr->type = le16_to_cpu(hdr->type);
+			hdr->modifiers = le16_to_cpu(hdr->modifiers);
+			hdr->algo = le16_to_cpu(hdr->algo);
+			hdr->count = le32_to_cpu(hdr->count);
+			hdr->datalen = le32_to_cpu(hdr->datalen);
+		}
+
+		if (hdr->algo >= HASH_ALGO__LAST)
+			return -EINVAL;
+
+		digest_len = hash_digest_size[hdr->algo];
+
+		if (hdr->type >= COMPACT__LAST) {
+			pr_err("compact list, invalid type %d\n", hdr->type);
+			return -EINVAL;
+		}
+
+		bufp += sizeof(*hdr);
+
+		for (i = 0; i < hdr->count; i++) {
+			if (bufp + digest_len > bufendp) {
+				pr_err("compact list, invalid data\n");
+				return -EINVAL;
+			}
+
+			digest = bufp;
+			bufp += digest_len;
+
+			ret = ima_add_digest_data_entry(digest, hdr->algo,
+							hdr->type,
+							hdr->modifiers);
+			if (ret < 0 && ret != -EEXIST)
+				return ret;
+		}
+
+		if (i != hdr->count ||
+		    bufp != (void *)hdr + sizeof(*hdr) + hdr->datalen) {
+			pr_err("compact list, invalid data\n");
+			return -EINVAL;
+		}
+	}
+
+	return bufp - buf;
 }

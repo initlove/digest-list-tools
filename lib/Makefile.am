@@ -1,28 +1,18 @@
-lib_LTLIBRARIES = libdigestlists.la libparserstatic.la
+lib_LTLIBRARIES=libdigestlist-base.la libdigestlist-gen.la
 
-libdigestlists_la_LIBADD = -lcrypto -lrpm -lrpmio -lcurl
+libdigestlist_base_la_CFLAGS=-I$(top_srcdir)/include
+libdigestlist_base_la_LIBADD=-ldl
+libdigestlist_base_la_SOURCES=kernel_lib.c lib.c compact_list.c xattr.c
 
-libdigestlists_la_CFLAGS = -I$(top_srcdir)/include -DCRYPTO
+if CMOCKA
+noinst_LTLIBRARIES=libdigestlist-base-test.la
+libdigestlist_base_test_la_CFLAGS=${libdigestlist_base_la_CFLAGS} -DUNIT_TESTING
+libdigestlist_base_test_la_LIBADD=${libdigestlist_base_la_LIBADD} -lcmocka
+libdigestlist_base_test_la_SOURCES=${libdigestlist_base_la_SOURCES}
+endif
 
-libdigestlists_la_SOURCES = kernel_lib.c \
-			    kernel_ima.c \
-			    metadata.c \
-			    lib.c \
-			    securityfs.c \
-			    pgp.c \
-			    parsers/rpm.c \
-			    parsers/deb.c \
-			    generators/compact_list.c \
-			    generators/rpm.c \
-			    generators/deb.c
-
-libparserstatic_la_CFLAGS = -I$(top_srcdir)/include
-libparserstatic_la_LDFLAGS = -all-static -lc -lz
-
-libparserstatic_la_SOURCES = kernel_lib.c \
-			     kernel_ima.c \
-			     lib.c \
-			     securityfs.c \
-			     pgp.c \
-			     parsers/rpm.c \
-			     parsers/deb.c
+if CRYPTO
+libdigestlist_gen_la_CFLAGS=${libdigestlist_base_la_CFLAGS}
+libdigestlist_gen_la_LIBADD=-lcrypto
+libdigestlist_gen_la_SOURCES=crypto.c
+endif

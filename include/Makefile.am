@@ -1,7 +1,6 @@
 noinst_HEADERS = kernel_lib.h \
-		 kernel_ima.h \
-		 compact_list.h \
-		 rpm.h \
-		 metadata.h \
+		 list.h \
 		 lib.h \
-		 pgp.h
+		 compact_list.h \
+		 crypto.h \
+		 xattr.h

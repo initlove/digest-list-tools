@@ -4,21 +4,39 @@ PREREQ="udev"
 
 prereqs()
 {
-	echo "$PREREQ"
+    echo "$PREREQ"
 }
 
 case $1 in
 prereqs)
-	prereqs
-	exit 0
-	;;
+    prereqs
+    exit 0
+    ;;
 esac
 
 . /usr/share/initramfs-tools/hook-functions
 
 copy_file binary /usr/bin/upload_digest_lists
-for file in $(find /etc/ima/digest_lists -type f); do
+
+for file in $(ls -d /etc/ima/digest_lists/*); do
     copy_file binary $file
 done
+
+libdir=$(dirname $(ldconfig -p| awk '{ if ($(NF-1) == "=>")
+    lib=$NF; if (lib != "") exit } END { print lib }'))
+
+for file in $(ls -d $libdir/digestlist/libparser-*.so); do
+    copy_file binary $file
+done
+
+libc=$(realpath $(ldd /usr/bin/upload_digest_lists | grep libc.so | \
+       awk '{print $3}'))
+cp -a $libc ${DESTDIR}${libc}
+libdl=$(realpath $(ldd /usr/bin/upload_digest_lists | grep libdl | \
+        awk '{print $3}'))
+cp -a $libdl ${DESTDIR}${libdl}
+ld=$(realpath $(ldd /usr/bin/upload_digest_lists | grep ld-linux | \
+     awk '{print $1}'))
+cp -a $ld ${DESTDIR}${ld}
 
 mkdir ${DESTDIR}/sys

@@ -1,5 +1,5 @@
 NAME
-upload_digest_lists - upload digest list metadata and digest lists
+upload_digest_lists - upload digest lists
 
 
 SYNOPSIS
@@ -7,24 +7,27 @@ upload_digest_lists [options]
 
 
 DESCRIPTION
-upload_digest_lists uploads digest list metadata and digest lists to IMA.
+upload_digest_lists uploads digest lists to IMA or write the converted digest
+lists to a file.
 
 
 OPTIONS
--d <directory>: directory where digest lists and metadata are stored
-                (default: /etc/ima/digest_lists)
+-d <directory>: directory containing digest lists
 
--m <file name>: metadata file name (default: metadata)
+-o <file>: write converted digest list to a file
 
 -h: display help
 
--e <algorithm>: digest algorithm
-
 
 EXAMPLES
-Upload digest list metadata and digest lists stored in /etc/ima/digest_lists.
+Upload digest lists stored in /etc/ima/digest_lists.
 
-# upload_digest_lists -d /etc/ima/digest_lists -m metadata -e sha256
+# upload_digest_lists -d /etc/ima/digest_lists
+
+Convert all digest lists in /etc/ima/digest_lists to the compact format and
+save the converted lists to converted_lists.
+
+# upload_digest_lists -d /etc/ima/digest_lists -o converted_lists
 
 
 AUTHOR
@@ -32,5 +35,6 @@ Written by Roberto Sassu, <roberto.sassu at huawei.com>.
 
 
 COPYING
-Copyright (C) 2018 Huawei Technologies Duesseldorf GmbH. Free use of this
-software is granted under the terms of the GNU Public License 2.0 (GPLv2).
+Copyright (C) 2018,2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017,2018 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -9,118 +9,109 @@
  * License.
  *
  * File: verify_digest_lists.c
- *      Verify digest list metadata and digest lists
+ *      Verify digest lists.
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
 #include <unistd.h>
+#include <keyutils.h>
+#include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
+#include <asm/unistd.h>
 
-#include "securityfs.h"
-#include "lib.h"
+#include "crypto.h"
+#include "compact_list.h"
 
-#define CURRENT_DIR "/etc/ima/digest_lists"
+#define DEFAULT_DIR "/etc/ima/digest_lists"
 
-static int verify_list_metadata(char *path, u8 *digest)
+
+static int process_lists(int dirfd, struct list_head *head,
+			 enum compact_types type)
 {
-	void *data, *datap;
-	loff_t size, mmap_size, cur_size = 0;
-	int ret, fd;
+	struct dirent **digest_lists;
+	struct key_struct *k;
+	LIST_HEAD(parser_lib_head);
+	int ret, i, n;
 
-	fd = read_file_from_path(path, &data, &size);
-	if (fd < 0) {
-		pr_err("Unable to read: %s (%d)\n", path, fd);
-		return fd;
+	n = scandirat(dirfd, ".", &digest_lists, filter[type], compare_lists);
+	if (n == -1) {
+		printf("Unable to access digest lists\n");
+		return -EACCES;
 	}
 
-	mmap_size = size;
+	for (i = 0; i < n; i++) {
+		if (type == COMPACT_KEY) {
+			k = new_key(head, dirfd, digest_lists[i]->d_name, NULL,
+				    false);
+			if (!k) {
+				ret = -ENOMEM;
+				goto out;
+			}
 
-	ret = check_digest(data, size, NULL, ima_hash_algo, digest);
-	if (ret < 0) {
-		pr_err("Metadata digest mismatch\n");
-		goto out;
-	}
-
-	datap = data;
-	while (size > 0) {
-		cur_size = ima_parse_digest_list_metadata(size, datap);
-		if (cur_size < 0) {
-			ret = -EINVAL;
-			goto out;
+			continue;
 		}
 
-		size -= cur_size;
-		datap += cur_size;
+		ret = verify_file(head, dirfd, digest_lists[i]->d_name);
+		if (ret < 0)
+			printf("Failed to process %s\n",
+			       digest_lists[i]->d_name);
 	}
 out:
-	munmap(data, mmap_size);
-	close(fd);
-	return ret;
+	free_keys(&parser_lib_head);
+	for (i = 0; i < n; i++)
+		free(digest_lists[i]);
+	free(digest_lists);
+	return 0;
 }
 
 static void usage(char *progname)
 {
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
-	printf("\t-d: directory containing metadata and digest lists\n"
-	       "\t-m <file name>: metadata file name\n"
-	       "\t-i <digest>: expected digest of metadata\n"
-	       "\t-h: display help\n"
-	       "\t-e <algorithm>: digest algorithm\n");
+	printf("\t-d <directory>: directory containing digest lists\n"
+	       "\t-h: display help\n");
 }
 
 int main(int argc, char *argv[])
 {
-	int c, ret = -EINVAL;
-	u8 input_digest[SHA512_DIGEST_SIZE];
-	char *cur_dir = CURRENT_DIR;
-	char *metadata_filename = "metadata";
-	int digest_len;
-	char *digest_ptr = NULL;
+	int c, i, dirfd, ret = -EINVAL;
+	char *cur_dir = DEFAULT_DIR;
+	LIST_HEAD(key_head);
 
-	while ((c = getopt(argc, argv, "d:m:i:he:")) != -1) {
+	while ((c = getopt(argc, argv, "d:h")) != -1) {
 		switch (c) {
 		case 'd':
 			cur_dir = optarg;
 			break;
-		case 'm':
-			metadata_filename = optarg;
-			break;
-		case 'i':
-			digest_ptr = optarg;
-			break;
 		case 'h':
 			usage(argv[0]);
 			return -EINVAL;
-		case 'e':
-			if (ima_hash_setup(optarg)) {
-				printf("Unknown algorithm %s\n", optarg);
-				return -EINVAL;
-			}
-			break;
 		default:
 			printf("Unknown option %c\n", optopt);
 			return -EINVAL;
 		}
 	}
 
-	if (digest_ptr == NULL) {
-		printf("Expected metadata digest not specified\n");
-		return -EINVAL;
+	dirfd = open(cur_dir, O_RDONLY | O_DIRECTORY);
+	if (dirfd < 0) {
+		printf("Unable to open %s, ret: %d\n", cur_dir, dirfd);
+		return dirfd;
 	}
 
-	OpenSSL_add_all_digests();
+	for (i = 0; i < COMPACT__LAST; i++) {
+		ret = process_lists(dirfd, &key_head, i);
+		if (ret < 0)
+			printf("Cannot access digest lists, ret: %d\n", ret);
+	}
 
-	digest_len = hash_digest_size[ima_hash_algo];
-	hex2bin(input_digest, digest_ptr, digest_len);
-
-	digest_lists_dir_path = cur_dir;
-
-	ret = verify_list_metadata(metadata_filename, input_digest);
-	if (ret == 0)
-		printf("digest_lists: %d, digests: %d\n",
-		       digest_lists, digests);
-
-	EVP_cleanup();
+	free_keys(&key_head);
+	close(dirfd);
 	return ret;
 }

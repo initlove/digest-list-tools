@@ -1,8 +1,13 @@
 SUBDIRS = docs \
+	  include \
 	  initrd \
 	  lib \
+	  generators \
+	  parsers \
 	  scripts \
-	  src
+	  src \
+	  systemd \
+	  tests
 
 EXTRA_DIST = AUTHORS \
 	     CHANGES

@@ -7,75 +7,55 @@ gen_digest_lists [options]
 
 
 DESCRIPTION
-gen_digest_lists can be used to generate digest lists from the RPM/DEB
-databases, from an RPM package, or from a list of digests in ASCII format.
+gen_digest_lists can be used to generate digest lists with one of the
+available generators (e.g. rpm, ima).
 
 
 OPTIONS
--a: append metadata to an existing file
+-d <directory>: directory containing digest lists
 
--d <directory>: directory where digest lists and metadata are stored
+-f <format>: format of the input file
 
--f <input format>: format of the input where digests are taken from
-                    - rpmdb: RPM database (default)
-                    - debdb: DEB database
-                    - rpmpkg: RPM package
-                    - ascii: ASCII file with line format <algo>:<digest>
+-i <path>: path of the input file
+
+-o <operation>: operation to do:
+		- add: insert a new digest list at the position specified
+		- append: add a new digest list after the existing ones
+		- remove: remove a digest list at the position specified
+		- sign: sign a digest list
+
+-p <position>: position of the file in the directory to add/remove
+
+-t <compact id>: type of compact list to generate
+
+-m <modifiers>: compact list modifiers separated by comma
+
+-a <algorithm>: hash algorithm
+
+-s: sign generated digest lists
+
+-k <key>: key to sign
+
+-w [<key password>]: key password or prompt
 
 -h: display help
-
--i <path>: path of the file where digests are taken from
-
--m <file name>: metadata file name (default: metadata)
-
--o <output format>: output format of the digest list
-                    - compact: compact digest list (default)
-                    - rpm: RPM package header
-
--w: files are mutable
-
--e <algorithm>: digest algorithm
-
--s: sign digest list with gpg
-
--k <key name>: gpg key name
-
--j <distro name>: distribution name
-
--u <repo url>: URL of the repository
 
 
 EXAMPLES
 Generate a compact digest list for each installed RPM package and copy it to
 /etc/ima/digest_lists.
 
-# gen_digest_lists -d /etc/ima/digest_lists
-
-Generate an RPM digest list for each installed RPM package and copy it to
-/etc/ima/digest_lists.
-
-# gen_digest_lists -d /etc/ima/digest_lists -o rpm
+# gen_digest_lists -f rpm+db -t file -o append
 
 Generate an RPM digest list from an RPM package and copy it to
 /etc/ima/digest_lists.
 
-# gen_digest_lists -d /etc/ima/digest_lists -f rpmpkg -i <RPM package>
+# gen_digest_lists -f rpm+pkg -i <RPM path> -t file -o append
 
-Generate a compact digest list from a file containing digests of immutable files
-and copy it to /etc/ima/digest_lists.
+Generate a compact digest list of immutable files from the IMA measurement
+list.
 
-# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file>
-
-Generate a compact digest list from a file containing digests of mutable files
-and copy it to /etc/ima/digest_lists.
-
-# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w
-
-Generate a compact digest list from a file containing digests of mutable
-files and copy it to /etc/ima/digest_lists. Append digest list metadata to
-/etc/ima/digest_lists/metadata.
-
-# gen_digest_lists -d /etc/ima/digest_lists -f ascii -i <ASCII file> -w -a
+# gen_digest_lists -f ima+ima_ng -t file_immutable -o append
 
 
 AUTHOR
@@ -83,5 +63,6 @@ Written by Roberto Sassu, <roberto.sassu at huawei.com>.
 
 
 COPYING
-Copyright (C) 2018 Huawei Technologies Duesseldorf GmbH. Free use of this
-software is granted under the terms of the GNU Public License 2.0 (GPLv2).
+Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

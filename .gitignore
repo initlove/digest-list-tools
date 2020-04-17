@@ -1,11 +1,16 @@
 *.o
 src/gen_digest_lists
-src/verify_digest_lists
 src/upload_digest_lists
-src/modify_digest_lists
-src/gen_parser_metadata
+src/verify_digest_lists
+
+tests/lib
+tests/ima
+tests/rpm
+tests/gen
+
 *Makefile.in
 *Makefile
+*~
 
 ar-lib
 config.h

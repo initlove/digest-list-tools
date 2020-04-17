@@ -1,0 +1,22 @@
+#  This file is part of digest-list-tools.
+#
+# digest-list-tools is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, version 2 of the
+# License.
+
+[Unit]
+Description=Execute setup_ima_digest_lists
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-journal-flush.service systemd-user-sessions.service systemd-tmpfiles-setup.service
+ConditionPathExists=/.digestlist_state
+
+[Service]
+ExecStart=/usr/bin/setup_ima_digest_lists mutable
+Type=oneshot
+RemainAfterExit=Yes
+TimeoutSec=90s
+
+[Install]
+WantedBy=multi-user.target

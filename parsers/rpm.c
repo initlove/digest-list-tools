@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017,2018 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -12,17 +12,38 @@
  *      Parses RPM package headers.
  */
 
-#include "kernel_ima.h"
-#include "pgp.h"
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+
+#include "compact_list.h"
 
 #define RPMTAG_FILESIZES 1028
 #define RPMTAG_FILEMODES 1030
 #define RPMTAG_FILEDIGESTS 1035
 #define RPMTAG_FILEDIGESTALGO 5011
 
-/**************
- * RPM parser *
- **************/
+
+enum pgp_hash_algo {
+	PGP_HASH_MD5			= 1,
+	PGP_HASH_SHA1			= 2,
+	PGP_HASH_RIPE_MD_160		= 3,
+	PGP_HASH_SHA256			= 8,
+	PGP_HASH_SHA384			= 9,
+	PGP_HASH_SHA512			= 10,
+	PGP_HASH_SHA224			= 11,
+	PGP_HASH__LAST
+};
+
+enum hash_algo pgp_algo_mapping[PGP_HASH__LAST] = {
+	[PGP_HASH_MD5] = HASH_ALGO_MD5,
+	[PGP_HASH_SHA1] = HASH_ALGO_SHA1,
+	[PGP_HASH_SHA224] = HASH_ALGO_SHA224,
+	[PGP_HASH_SHA256] = HASH_ALGO_SHA256,
+	[PGP_HASH_SHA384] = HASH_ALGO_SHA384,
+	[PGP_HASH_SHA512] = HASH_ALGO_SHA512,
+};
+
 struct rpm_hdr {
 	u32 magic;
 	u32 reserved;
@@ -37,8 +58,7 @@ struct rpm_entryinfo {
 	u32 count;
 } __attribute__((packed));
 
-int ima_parse_rpm(loff_t size, void *buf, void *ctx, u16 data_algo,
-		  callback_func func)
+int parser(int fd, struct list_head *head, loff_t size, void *buf)
 {
 	void *bufp = buf, *bufendp = buf + size;
 	struct rpm_hdr *hdr = bufp;
@@ -47,8 +67,9 @@ int ima_parse_rpm(loff_t size, void *buf, void *ctx, u16 data_algo,
 	void *datap = bufp + sizeof(*hdr) + tags * sizeof(struct rpm_entryinfo);
 	void *sizes = NULL, *modes = NULL, *digests = NULL, *algo_buf = NULL;
 	u32 sizes_count = 0, modes_count = 0, digests_count = 0;
-	u16 digest_algo = HASH_ALGO_MD5;
-	u8 digest[IMA_MAX_DIGEST_SIZE];
+	u16 algo = HASH_ALGO_MD5;
+	u8 digest[SHA512_DIGEST_SIZE];
+	struct list_struct *list[2] = { NULL };
 	int ret = 0, i, digest_len;
 
 	const unsigned char rpm_header_magic[8] = {
@@ -96,13 +117,15 @@ int ima_parse_rpm(loff_t size, void *buf, void *ctx, u16 data_algo,
 	if (digests == NULL)
 		return 0;
 
-	if (algo_buf && algo_buf + sizeof(u32) <= bufendp)
-		digest_algo = pgp_algo_mapping[be32_to_cpu(*(u32 *)algo_buf)];
+	if (algo_buf && algo_buf + sizeof(u32) <= bufendp) {
+		algo = pgp_algo_mapping[be32_to_cpu(*(u32 *)algo_buf)];
+	}
 
-	digest_len = hash_digest_size[digest_algo];
+	digest_len = hash_digest_size[algo];
 
 	for (i = 0; i < digests_count && digests < bufendp; i++) {
-		u8 flags = DIGEST_FLAG_IMMUTABLE;
+		u16 modifiers = (1 << COMPACT_MOD_IMMUTABLE);
+		int index;
 		u16 mode;
 		u32 size;
 
@@ -123,27 +146,34 @@ int ima_parse_rpm(loff_t size, void *buf, void *ctx, u16 data_algo,
 		if (sizes) {
 			size = be32_to_cpu(*(u32 *)(sizes + i * sizeof(size)));
 			if (!size)
-				flags = 0;
+				modifiers = 0;
 		}
 
-		if (flags && modes) {
+		if (modifiers && modes) {
 			mode = be16_to_cpu(*(u16 *)(modes + i * sizeof(mode)));
 			if (!(mode & (S_IXUGO | S_ISUID | S_ISVTX)) &&
 			    (mode & S_IWUGO))
-				flags = 0;
+				modifiers = 0;
 		}
 
 		ret = hex2bin(digest, digests, digest_len);
 		if (ret < 0)
-			return -EINVAL;
+			return ret;
 
-		ret = ima_add_digest_data_entry(digest, digest_algo, flags,
-						DATA_TYPE_REG_FILE, ACTION_ADD);
-		if (ret < 0 && ret != -EEXIST)
+		index = (modifiers & (1 << COMPACT_MOD_IMMUTABLE)) ? 1 : 0;
+		if (!list[index]) {
+			list[index] = compact_list_init(head, COMPACT_FILE,
+							modifiers, algo);
+			if (!list[index])
+				return -ENOMEM;
+		}
+
+		ret = compact_list_add_digest(fd, list[index], digest);
+		if (ret < 0)
 			return ret;
 
 		digests += digest_len * 2 + 1;
 	}
 
-	return ret < 0 ? ret : bufp - buf;
+	return 0;
 }

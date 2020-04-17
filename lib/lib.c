@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017,2018 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -12,120 +12,53 @@
  *      Includes libraries.
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <link.h>
+#include <dlfcn.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/xattr.h>
 
 #include "lib.h"
 
-char *digest_lists_dir_path;
-int parse_metadata, remove_file, set_ima_algo;
 
-#ifdef CRYPTO
-int calc_digest(u8 *digest, void *data, int len, enum hash_algo algo)
+int read_file_from_path(int dirfd, const char *path, void **buf, loff_t *size)
 {
-	EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
-	const EVP_MD *md = EVP_get_digestbyname(hash_algo_name[algo]);
-
-	if (mdctx == NULL)
-		return -EINVAL;
-
-	if (EVP_DigestInit_ex(mdctx, md, NULL) != 1)
-		return -EINVAL;
-
-	if (EVP_DigestUpdate(mdctx, data, len) != 1)
-		return -EINVAL;
-
-	if (EVP_DigestFinal_ex(mdctx, digest, NULL) != 1)
-		return -EINVAL;
-
-	EVP_MD_CTX_destroy(mdctx);
-	return 0;
-}
-
-int calc_file_digest(u8 *digest, char *path, enum hash_algo algo)
-{
-	void *data;
 	struct stat st;
-	int fd, ret = 0;
+	int ret = 0, fd;
 
-	if (stat(path, &st) != 0)
-		return -EACCES;
+	if (dirfd >= 0) {
+		if (fstatat(dirfd, path, &st, 0) == -1)
+			return -EACCES;
 
-	fd = open(path, O_RDONLY);
+		fd = openat(dirfd, path, O_RDONLY);
+	} else {
+		if (stat(path, &st) == -1)
+			return -EACCES;
+
+		fd = open(path, O_RDONLY);
+	}
+
 	if (fd < 0)
-		return -EACCES;
+		return -EINVAL;
 
-	data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (data == MAP_FAILED) {
+	*buf = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE,
+		    fd, 0);
+	if (*buf == MAP_FAILED) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	ret = calc_digest(digest, data, st.st_size, algo);
+	*size = st.st_size;
 out:
-	if (data)
-		munmap(data, st.st_size);
-
 	close(fd);
 	return ret;
-}
-#endif
-
-int check_digest(void *data, int len, char *path,
-		 enum hash_algo algo, u8 *input_digest)
-{
-#ifdef CRYPTO
-	int digest_len = hash_digest_size[algo];
-	u8 digest[digest_len];
-	int ret;
-
-	if (parse_metadata)
-		return 0;
-
-	if (path)
-		ret = calc_file_digest(digest, path, algo);
-	else
-		ret = calc_digest(digest, data, len, algo);
-
-	if (ret < 0)
-		return ret;
-
-	if (memcmp(digest, input_digest, digest_len))
-		return -EINVAL;
-#endif
-	return 0;
-}
-
-int read_file_from_path(const char *path, void **buf, loff_t *size)
-{
-	struct stat st;
-	const char *cur_path = path, *basename;
-	char tmp_path[256];
-	int fd;
-
-	if (digest_lists_dir_path) {
-		basename = rindex(path, '/');
-		snprintf(tmp_path, sizeof(tmp_path), "%s/%s",
-			 digest_lists_dir_path, basename ? basename : path);
-		cur_path = tmp_path;
-	}
-
-	fd = open(cur_path, O_RDONLY);
-	if (fd < 0)
-		return -EINVAL;
-
-	stat(cur_path, &st);
-	*buf = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE,
-		    fd, 0);
-	if (*buf == MAP_FAILED)
-		return -ENOMEM;
-
-	*size = st.st_size;
-	return fd;
 }
 
 ssize_t write_check(int fd, const void *buf, size_t count)
@@ -135,10 +68,10 @@ ssize_t write_check(int fd, const void *buf, size_t count)
 	while (count > 0) {
 		ret = write(fd, buf, count);
 		if (ret == -1) {
-			pr_err("write() error (%s)\n", strerror(errno));
+			printf("write() error (%s)\n", strerror(errno));
 			return -EIO;
 		} else if (!ret) {
-			pr_err("write() incomplete, remaining: %ld bytes\n",
+			printf("write() incomplete, remaining: %zu bytes\n",
 			       count);
 			return -EIO;
 		}
@@ -150,8 +83,140 @@ ssize_t write_check(int fd, const void *buf, size_t count)
 	return 0;
 }
 
-void hexdump(u8 *buf, int len)
+struct lib *lookup_lib(struct list_head *head, const char *lib_type,
+		       const char *format, int format_len)
 {
-	while (--len >= 0)
-		printf("%02x", *buf++);
+	struct lib *tmp, *new;
+	char lib_path[PATH_MAX + 1];
+	char function[NAME_MAX + 1];
+	char *format_end_ptr, *func_name_ptr;
+	void *handle;
+	int ret, lib_path_len;
+
+	format_end_ptr = strchrnul(format, '-');
+	func_name_ptr = memchr(format, '+', format_end_ptr - format);
+	if (func_name_ptr) {
+		snprintf(function, sizeof(function), "%.*s_%s",
+			 (int)(format_end_ptr - func_name_ptr - 1),
+			 func_name_ptr + 1, lib_type);
+		format_len = func_name_ptr - format;
+	} else {
+		strncpy(function, lib_type, sizeof(function));
+	}
+
+	if (!list_empty(head)) {
+		list_for_each_entry(tmp, head, list)
+			if (!strncmp(tmp->format, format, format_len))
+				return tmp;
+	}
+
+	new = calloc(1, sizeof(*new));
+	if (!new)
+		return new;
+
+	new->format = malloc(format_len + 1);
+	if (!new->format)
+		goto err_free;
+
+	strncpy(new->format, format, format_len);
+	new->format[format_len] = '\0';
+
+	handle = dlopen("libdigestlist-base.so", RTLD_LAZY);
+	if (!handle)
+		goto err_free;
+
+	ret = dlinfo(handle, RTLD_DI_ORIGIN, lib_path);
+	dlclose(handle);
+
+	if (ret < 0)
+		goto err_free;
+
+	lib_path_len = strlen(lib_path);
+
+	snprintf(lib_path + lib_path_len, sizeof(lib_path) - lib_path_len,
+		 "/digestlist/lib%s-%s.so", lib_type, new->format);
+
+	new->handle = dlopen(lib_path, RTLD_LAZY | RTLD_NODELETE);
+	if (!new->handle) {
+		snprintf(lib_path, sizeof(lib_path), "lib%s-%s.so", lib_type,
+			 new->format);
+
+		new->handle = dlopen(lib_path, RTLD_LAZY | RTLD_NODELETE);
+		if (!new->handle)
+			goto err_free;
+	}
+
+	
+	new->func = dlsym(new->handle, function);
+
+	if (!new->func)
+		goto err_free;
+
+	list_add_tail(&new->list, head);
+
+	return new;
+err_free:
+	if (new) {
+		free(new->format);
+		if (new->handle)
+			dlclose(new->handle);
+	}
+
+	free(new);
+	return NULL;
+}
+
+void free_libs(struct list_head *head)
+{
+	struct lib *cur, *tmp;
+
+	list_for_each_entry_safe(cur, tmp, head, list) {
+		list_del(&cur->list);
+		free(cur->format);
+		dlclose(cur->handle);
+		free(cur);
+	}
+}
+
+int add_path_struct(char *path, struct list_head *head)
+{
+	struct path_struct *new;
+
+	new = malloc(sizeof(*new));
+	if (!new)
+		return -ENOMEM;
+
+	new->path = malloc(strlen(path) + 1);
+	if (!new->path) {
+		free(new);
+		return -ENOMEM;
+	}
+
+	strcpy(new->path, path);
+	list_add_tail(&new->list, head);
+	return 0;
+}
+
+void move_path_structs(struct list_head *dest, struct list_head *src)
+{
+	struct path_struct *p, *q;
+
+	list_for_each_entry_safe(p, q, src, list) {
+		list_del(&p->list);
+		list_add_tail(&p->list, dest);
+	}
+}
+
+void free_path_structs(struct list_head *head)
+{
+	struct path_struct *cur, *tmp;
+
+	if (list_empty(head))
+		return;
+
+	list_for_each_entry_safe(cur, tmp, head, list) {
+		list_del(&cur->list);
+		free(cur->path);
+		free(cur);
+	}
 }

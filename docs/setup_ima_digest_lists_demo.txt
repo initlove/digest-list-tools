@@ -1,0 +1,50 @@
+NAME
+setup_ima_digest_lists_demo - demo script to generate digest lists
+
+
+SYNOPSIS
+setup_ima_digest_lists_demo distro|immutable|mutable-generate|mutable-sign
+                            [private key (PEM)] [x.509 certificate (PEM)]
+
+
+DESCRIPTION
+setup_ima_digest_lists_demo is a demo script that simplifies the generation
+of digest lists.
+
+
+COMMANDS
+distro: generate digest lists from the RPM database
+
+immutable: generate digest lists of immutable files from IMA measurements
+
+mutable-generate: generate digest lists of mutable files from IMA measurements
+
+mutable-sign: sign digest lists after update with final digest
+
+
+OPTIONS
+<private key>: path of private key in PEM format
+
+<x509 certificate>: path of X.509 certificate in PEM format
+
+-h: display help
+
+
+EXAMPLES
+Generate digest lists from the RPM database.
+
+# setup_ima_digest_lists distro
+
+Generate a digest list of immutable files in /etc from IMA measurements.
+
+# setup_ima_digest_lists immutable -a -i -D "/etc"
+
+
+AUTHOR
+Written by Roberto Sassu, <roberto.sassu at huawei.com>.
+
+
+COPYING
+Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH. Free use of
+this software is granted under the terms of the GNU Public License 2.0
+(GPLv2).

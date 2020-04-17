@@ -11,7 +11,25 @@ depends() {
 }
 
 install() {
-    mkdir -m 0755 -p ${initdir}/etc/ima
-    cp /usr/bin/upload_digest_lists ${initdir}/usr/bin/upload_digest_lists
-    cp -a /etc/ima/digest_lists ${initdir}/etc/ima
+    if [ ! -e /etc/ima/digest_lists ]; then
+        return 0
+    fi
+
+    if [ "$(find /etc/ima/digest_lists)" = "/etc/ima/digest_lists" ]; then
+        return 0
+    fi
+
+    inst_dir /etc/ima/digest_lists
+    inst_multiple /etc/ima/digest_lists/*
+    inst_binary upload_digest_lists
+    inst_libdir_file "digestlist/libparser-*.so"
+    libc=$(realpath $(ldd /usr/bin/upload_digest_lists | grep libc.so | \
+           awk '{print $3}'))
+    cp -a $libc ${initdir}${libc}
+    libdl=$(realpath $(ldd /usr/bin/upload_digest_lists | grep libdl | \
+            awk '{print $3}'))
+    cp -a $libdl ${initdir}${libdl}
+    ld=$(realpath $(ldd /usr/bin/upload_digest_lists | grep ld-linux | \
+         awk '{print $1}'))
+    cp -a $ld ${initdir}${ld}
 }

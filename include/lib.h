@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Huawei Technologies Duesseldorf GmbH
+ * Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
  *
  * Author: Roberto Sassu <roberto.sassu@huawei.com>
  *
@@ -9,28 +9,51 @@
  * License.
  *
  * File: lib.h
- *      Header of lib.h.
+ *      Library header.
  */
 
 #ifndef _LIB_H
 #define _LIB_H
 
-#include <openssl/sha.h>
-#include <openssl/evp.h>
+#include <dlfcn.h>
+#include <dirent.h>
 
+#include "list.h"
 #include "kernel_lib.h"
 
-#define MAX_PATH_LENGTH 2048
+#ifdef UNIT_TESTING
+#include <stdarg.h>
+#include <stddef.h>
+#include <setjmp.h>
+#include <cmocka.h>
+#endif
 
-extern char *digest_lists_dir_path;
-extern int parse_metadata, remove_file, set_ima_algo;
 
-int calc_digest(u8 *digest, void *data, int len, enum hash_algo algo);
-int calc_file_digest(u8 *digest, char *path, enum hash_algo algo);
-int check_digest(void *data, int len, char *path,
-		 enum hash_algo algo, u8 *input_digest);
-int read_file_from_path(const char *path, void **buf, loff_t *size);
+#define SYSFS_PATH "/sys"
+#define SECURITYFS_PATH SYSFS_PATH "/kernel/security"
+#define IMA_SECURITYFS_PATH SECURITYFS_PATH "/ima"
+
+int read_file_from_path(int dirfd, const char *path, void **buf, loff_t *size);
 ssize_t write_check(int fd, const void *buf, size_t count);
-void hexdump(u8 *buf, int len);
 
-#endif /* _LIB_H */
+struct lib {
+	struct list_head list;
+	char *format;
+	void *handle;
+	void *func;
+};
+
+struct lib *lookup_lib(struct list_head *head, const char *lib_type,
+		       const char *format, int format_len);
+void free_libs(struct list_head *head);
+
+struct path_struct {
+	struct list_head list;
+	char *path;
+};
+
+int add_path_struct(char *path, struct list_head *head);
+void move_path_structs(struct list_head *dest, struct list_head *src);
+void free_path_structs(struct list_head *head);
+
+#endif /*_LIB_H*/

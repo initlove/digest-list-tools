@@ -1,6 +1,6 @@
 #! /bin/bash
 
-# Copyright (C) 2017,2018 Huawei Technologies Duesseldorf GmbH
+# Copyright (C) 2017-2019 Huawei Technologies Duesseldorf GmbH
 #
 # Author: Roberto Sassu <roberto.sassu@huawei.com>
 #
@@ -10,16 +10,17 @@
 # License.
 #
 # File: setup_ima_digest_lists
-#      Configure digest lists
+#      Configure digest lists.
+
 
 OPTIND=2
 digest_lists_dir="/etc/ima/digest_lists"
-algorithm=""
+backup_dir="/backup"
+parser_path="/usr/bin/upload_digest_lists"
 gen_digest_lists_result=0
 use_current_ima_list=0
 sign_opt=""
-gpg_key_param=""
-gpg_key_name=""
+sign_opts=""
 kernel_ver=$(uname -r)
 freeze_mutable=0
 unfreeze_mutable=0
@@ -27,172 +28,111 @@ search_dirs=""
 exclude_dirs=""
 new_list=""
 selected_lists=""
-compact_prefix="compact-"
-mutable_suffix="___digest"
-file_prefix=$(date +%y%m%d_%H%M%S)
 mutable_op=""
-add_empty_files=0
+gen_initramfs=0
+compact_type="file"
+metadata_opt=""
+signed_lists=""
 
-function detect_algo_cmdline() {
-    cat /proc/cmdline | awk '{
-        for (i = 1; i < NF; i++) {
-            if ($i ~ /ima_hash=/) {
-                split($i, v, "=");
-                print v[2];
-            };
-         };
-    };'
+function detect_dracut_metadata_opt() {
+    result=$(dracut --help | grep file-metadata)
+
+    if [ -n "$result" ]; then
+        metadata_opt="-e xattr"
+    fi
 }
 
-function detect_algo_measurements() {
-    if [ ! -f /sys/kernel/security/ima/ascii_runtime_measurements ]; then
-        return
-    fi
+function detect_mkinitramfs_metadata_opt() {
+    result=$(mkinitramfs 2> /dev/stdout |grep metadata)
 
-    num_meas=$(cat /sys/kernel/security/ima/ascii_runtime_measurements | wc -l)
-    if [ $num_meas -eq 1 ]; then
-        return
+    if [ -n "$result" ]; then
+        metadata_opt="-e xattr"
     fi
-
-    cat /sys/kernel/security/ima/ascii_runtime_measurements | awk '{
-        split($4, v, ":"); algo_array[v[1]]++;
-        }; END {
-            cur=0; for (algo in algo_array) {
-                if (algo_array[algo] > cur) {
-                    detected_algo=algo;
-                    cur=algo_array[algo];
-                };
-            };
-            print algo;
-        };'
 }
 
-function detect_algo() {
-    algo=$(detect_algo_cmdline)
-    if [ -z "$algo" ]; then
-        algo=$(detect_algo_measurements)
-        if [ -z "$algo" ]; then
-            algo="sha256-default"
-        fi
-    fi
-
-    echo $algo
-}
-
-function freeze_files() {
-    new_list=$1
-
-    # do not lock inodes which are already immutable
-    mv $new_list $new_list.tmp
-    while read digest path; do
-        if [ ! -f $path ]; then
+function replace_files() {
+    for list in $(ls -d $backup_dir/*.orig); do
+        if [ -e ${list%%.orig} ]; then
             continue
         fi
 
-        is_immutable=$(lsattr $path | awk '{
-            if ($1 ~ /i/)
-                print 1;
-            else
-                print 0;
-        };')
+        list=$(basename $list)
 
-        if [ $is_immutable -eq 1 ]; then
-            echo "Skip $path (already immutable)"
-        else
-            echo "$digest $path" >> $new_list
-        fi
-    done < $new_list.tmp
+        for path in $(find $backup_dir/$list -type f); do
+            path=${path##$backup_dir/$list}
+            parent_dir=$(dirname $path)
 
-    if [ ! -f $new_list ]; then
-        rm $new_list.tmp
-        return
-    fi
-
-    for path in $(cat $new_list | awk '{print $2}'); do
-        # do not freeze metadata, it will be updated
-        if [ "$path" = "$digest_lists_dir/metadata" ]; then
-            continue
-        fi
-
-        echo "Freeze and remove security.ima/security.evm from $path"
-        attr -S -r ima $path 2> /dev/null
-        attr -S -r evm $path 2> /dev/null
-        chattr +i $path
-    done
-
-    rm $new_list.tmp
-    touch ${new_list}${mutable_suffix}
-}
-
-function unfreeze_files() {
-    for list in $selected_lists; do
-        if [ ${list%%$mutable_suffix} != "$list" ]; then
-            continue
-        fi
-
-        while read digest path; do
-            if [ -f "$path" ]; then
-                    echo "Unfreeze $path"
-                    chattr -i $path
+            if [ ! -e $backup_dir/${list%%.orig}/$parent_dir ]; then
+                mkdir -p $backup_dir/${list%%.orig}/$parent_dir
             fi
-        done < $list
 
+            cp -f $path $backup_dir/${list%%.orig}/$parent_dir/
+            attr -S -r ima $path 2> /dev/null
+            attr -S -r evm $path 2> /dev/null
+            cp -f $backup_dir/$list/$path $parent_dir/
+        done
     done
 }
 
-function update_lists_of_frozen_files() {
-    for list in $selected_lists; do
-        if [ ${list%%$mutable_suffix} != "$list" ]; then
+function update_lists() {
+    initramfs_dir=$(mktemp -d)
+    if [ -z "$initramfs_dir" ]; then
+        echo "Temporary directory not created"
+        return
+    fi
+
+    initramfs=$(ls /boot/init*$(uname -r)* | awk '{print $1}')
+    zcat $initramfs | cpio -i -D $initramfs_dir
+
+    for list in $(ls -d $backup_dir/*.orig); do
+        if [ -e ${list%%.orig} ]; then
             continue
         fi
+
+        list_basename=$(basename ${list%%.orig})
+        list=$digest_lists_dir/$list_basename
 
         mv $list $list.tmp
-        while read digest path; do
-            echo "${digest%%:*}:$(${digest%%:*}sum $path)" >> \
-                ${list%%$mutable_suffix};
+        while read pcr template_digest template_name digest path; do
+            if [ -z "$template_digest" ]; then
+                echo $pcr >> $list
+                continue
+            fi
+
+            if [ ! -e $path ]; then
+                echo "$pcr $template_digest $template_name $digest $path" \
+                    >> $list
+                continue
+            fi
+
+            path_dirname=$(dirname $path)
+            new_digest=$(${digest%%:*}sum $path | awk '{print $1}')
+
+            if [ $new_digest != ${digest##*:} ] && \
+               [ -e ${initramfs_dir}${path} ]; then
+                initramfs_digest=$(${digest%%:*}sum ${initramfs_dir}${path} | \
+                                   awk '{print $1}')
+                if [ $initramfs_digest == ${digest##*:} ]; then
+                    new_digest=$initramfs_digest
+                fi
+            fi
+
+            echo "$pcr $template_digest $template_name \
+${digest%%:*}:$new_digest $path" >> $list
+            if [ $new_digest != ${digest##*:} ]; then
+                if [ ! -e $backup_dir/$list_basename.orig/$path_dirname ]; then
+                    mkdir -p $backup_dir/$list_basename.orig/$path_dirname
+                fi
+
+                cp -f $path $backup_dir/$list_basename.orig/$path_dirname/
+            fi
+
         done < $list.tmp
 
         rm $list.tmp
-
-        echo "$algorithm:$(${algorithm}sum $list)" > ${list}${mutable_suffix}
-    done
-}
-
-function select_lists_of_frozen_files() {
-    i=0
-
-    for list in $(ls $digest_lists_dir/*$mutable_suffix 2> /dev/null); do
-        if [ ! -f ${list%%$mutable_suffix} ]; then
-            continue
-        fi
-
-        list_basename=$(basename $list)
-        if [ "${list_basename##$compact_prefix}" != "$list_basename" ]; then
-            continue
-        fi
-
-        echo -e "\t[$i]: $list"
-        array[$i]="$list ${list%%$mutable_suffix}"
-        selected_lists="$selected_lists ${array[$i]}"
-        ((i++))
     done
 
-    if [ $i -eq 0 ]; then
-        echo "Lists of frozen files not found, run with option -f"
-        exit 0
-    fi
-
-    echo -e "\t[a]: all\n\nSelection? [a]"
-    read answer
-
-    if [ -z "$answer" ] || [ "$answer" = "a" ]; then
-        return
-    fi
-
-    selected_lists=""
-    for idx in $answer; do
-        selected_lists="$selected_lists ${array[$idx]}"
-    done
+    rm -Rf $initramfs_dir
 }
 
 function get_awk_opt_dir() {
@@ -217,7 +157,7 @@ function get_awk_opt_dir() {
         fi
 
         awk_opt_dir="${awk_opt_dir}
-                     \$5 ${neg_op}~ /^$(echo $dir | sed 's/\//\\\//g')/"
+            \$5 ${neg_op}~ /^$(echo $dir | sed 's/[][/\.^$(){}|*+?]/\\&/g')/"
     done
 
     echo $awk_opt_dir
@@ -258,26 +198,24 @@ function question() {
 }
 
 function usage() {
-    echo "Usage: $0 initial|immutable|mutable [options]"
+    echo "Usage: $0 parser|distro|immutable|mutable [options]"
     echo "Options:"
-    echo -e "\t-d <directory>: directory where digest lists and metadata are
-             stored"
-    echo -e "\t-e <algorithm>: digest algorithm"
-    echo -e "\t-a: append metadata"
+    echo -e "\t-d <directory>: directory where digest lists are stored"
     echo -e "\t-i: use current IMA measurement list"
-    echo -e "\t-s: sign digest list with gpg"
-    echo -e "\t-k <key name>: gpg key name"
     echo -e "\t-V <kernel version>: kernel version"
     echo -e "\t-D <search dirs>: directories containing immutable/mutable files"
     echo -e "\t-E <exclude dirs>: excluded directories"
-    echo -e "\t-f: freeze mutable files"
-    echo -e "\t-u: unfreeze mutable files"
-    echo -e "\t-r: remove list of mutable files"
-    echo -e "\t-g: generate digest lists from lists of mutable files"
-    echo -e "\t-z: add empty files to the list of mutable files"
+    echo -e "\t-u: update digest lists of mutable files"
+    echo -e "\t-r: replace mutable files with backup"
+    echo -e "\t-g: generate digest lists of mutable files"
+    echo -e "\t-a: run initramfs generator"
+    echo -e "\t-s: sign digest list"
+    echo -e "\t-v <private key>: path of private key in PEM format"
+    echo -e "\t-x <x509 certificate>: path of X.509 certificate in PEM format"
+    echo -e "\t-h: display help"
 }
 
-if [ "$1" != "initial" ] && [ "$1" != "immutable" ] && \
+if [ "$1" != "parser" ] && [ "$1" != "distro" ] && [ "$1" != "immutable" ] && \
    [ "$1" != "mutable" ]; then
     usage
     exit 1
@@ -287,24 +225,11 @@ if [ -e "/etc/os-release" ]; then
     source /etc/os-release
 fi
 
-while getopts "hd:e:aisk:V:D:E:furgz" opt; do
+while getopts "d:iV:D:E:urgasv:x:h" opt; do
     case "$opt" in
-    h)
-        usage
-        exit 0
-        ;;
     d)  digest_lists_dir=$OPTARG
         ;;
-    e)  algorithm=$OPTARG
-        ;;
-    a)  gen_digest_lists_opt="-a"
-        ;;
     i)  use_current_ima_list=1
-        ;;
-    s)  sign_opt="-s";
-        ;;
-    k)  gpg_key_param="-k"
-        gpg_key_name=$OPTARG
         ;;
     V)  kernel_ver=$OPTARG
         ;;
@@ -312,18 +237,41 @@ while getopts "hd:e:aisk:V:D:E:furgz" opt; do
         ;;
     E)  exclude_dirs=$OPTARG
         ;;
-    f)  mutable_op="freeze"
+    u)  mutable_op="update"
         ;;
-    u)  mutable_op="unfreeze"
-        ;;
-    r)  mutable_op="remove"
+    r)  mutable_op="replace"
         ;;
     g)  mutable_op="generate"
         ;;
-    z)  add_empty_files=1
+    a)  gen_initramfs=1
+        ;;
+    s)  sign_opt="-s"
+        ;;
+    v)  private_key=$OPTARG
+        ;;
+    x)  cert=$OPTARG
+        ;;
+    h)
+        usage
+        exit 0
         ;;
     esac
 done
+
+if [ -n "$sign_opt" ]; then
+    if [ -z "$private_key" ] || [ -z "$cert" ]; then
+        echo "Private/public key not specified"
+        exit 1
+    fi
+
+    sign_opts="$sign_opt -k $private_key"
+fi
+
+if [ "$1" = "mutable" ] && [ -z "$mutable_op" ] && [ -z "$sign_opt" ]; then
+    if [ -e /.digestlist_state ]; then
+        mutable_op=$(cat /.digestlist_state)
+    fi
+fi
 
 if [ "$1" != "mutable" ] && [ -n "$mutable_op" ]; then
     echo "Mutable options cannot be used with $1 command"
@@ -334,67 +282,65 @@ if [ ! -e "$digest_lists_dir" ]; then
     mkdir -p $digest_lists_dir
 fi
 
-if [ -z "$algorithm" ]; then
-    algorithm=$(detect_algo)
-    if [ "${algorithm%%-default}" != "${algorithm}" ]; then
-        algorithm=${algorithm%%-default}
-        question "Default algorithm is $algorithm, is it correct"
+compact_type="parser"
+
+if [ "$1" = "parser" ] || \
+   [ ! -e $digest_lists_dir/compact-upload_digest_lists ]; then
+    if [ -n "$sign_opts" ]; then
+        temp_cert="/tmp/$(basename ${cert%%.pem}.der)"
+        openssl x509 -in $cert -out $temp_cert -outform der
+        gen_digest_lists -d $digest_lists_dir -t key -f copy -i $temp_cert \
+                         -o append -m immutable
+        rm $temp_cert
     fi
+
+    input_opt="-i ${parser_path}$(ldd $parser_path | awk '{ if ($2 == "=>")
+        shlib_list=shlib_list" -i " $3; if ($1 ~ /^\//)
+        shlib_list=shlib_list" -i " $1 } END { print shlib_list }')"
+    gen_digest_lists -d $digest_lists_dir -f compact -t $compact_type \
+                     -o append $input_opt $sign_opts -m immutable
+
+    libdir=$(dirname $(ldconfig -p | awk '{ if ($(NF-1) == "=>")
+        lib=$NF; if (lib != "") exit } END { print lib }'))
+    for lib in $(ls $libdir/digestlist/libparser-*.so); do
+        gen_digest_lists -d $digest_lists_dir -f compact -t $compact_type \
+                         -o append -i $lib $sign_opts -m immutable
+    done
 fi
 
-if [ -z "$gen_digest_lists_opt" ] && [ -f "$digest_lists_dir/metadata" ] && \
-   { [ "$1" != "mutable" ] || [ "$mutable_op" = "generate" ]; }; then
-    question "Digest list metadata exists. Do you want to continue"
+compact_type="file"
 
-    # remove PGP keys so that they are included in digest list metadata
-    rm -f $digest_lists_dir/pgp-key-*.gpg
-fi
-
-if [ ! -f "$digest_lists_dir/parser_metadata" ]; then
-    # generate parser metadata
-    echo "Generate parser metadata"
-    gen_parser_metadata -e $algorithm -d $digest_lists_dir
-    if [ $? -ne 0 ]; then
+if [ "$1" = "distro" ]; then
+    echo "Generate digest list from package manager database"
+    if [ "$ID" == "debian" ] || [ "$ID" == "ubuntu" ]; then
+        echo "Debian-based distributions are currently not supported"
         exit 1
     fi
-fi
 
-if [ "$1" = "initial" ]; then
-    # generate digest lists from package manager database
-    echo "Generate initial digest list from package manager database"
-    distro_opt="-o rpm"
-    if [ "$ID" == "ubuntu" ]; then
-        distro_opt="-f debdb -j $VERSION_CODENAME"
-    fi
-
-    gen_digest_lists $gen_digest_lists_opt -e $algorithm -d $digest_lists_dir \
-                     $distro_opt
+    gen_digest_lists -d $digest_lists_dir -f rpm+db -t $compact_type -o append \
+                     $sign_opts
     gen_digest_lists_result=$?
 elif [ "$1" = "immutable" ]; then
-    new_list="$digest_lists_dir/$file_prefix-unknown_digests_immutable"
+    new_list="$(mktemp)"
+    modifiersopt="-m immutable"
 elif [ "$1" = "mutable" ]; then
-    gen_digest_lists_opt="$gen_digest_lists_opt -w"
-
-    if [ "$mutable_op" = "freeze" ]; then
-        new_list="$digest_lists_dir/$file_prefix-unknown_digests_mutable"
-    elif [ "$mutable_op" = "unfreeze" ]; then
-        select_lists_of_frozen_files
-        unfreeze_files
-        exit 0
-    elif [ "$mutable_op" = "remove" ]; then
-        select_lists_of_frozen_files
-        for list in $selected_lists; do
-            if [ -f "$list" ]; then
-                rm -f $list
-            fi
+    if [ "$mutable_op" = "generate" ]; then
+        new_list="$(mktemp)"
+    elif [ "$mutable_op" = "update" ]; then
+        update_lists
+    elif [ "$mutable_op" = "replace" ]; then
+        replace_files
+        rm /.digestlist_state
+        /usr/lib/dracut/dracut-initramfs-restore
+        systemctl --force reboot
+    elif [ -n "$sign_opts" ]; then
+        for file in $(verify_digest_lists | \
+                      awk '{ if ($3 == "process") print $4 }'); do
+            gen_digest_lists -o sign $sign_opts -i $file
+            signed_lists="$signed_lists $file"
         done
-
-        exit 0
-    elif [ "$mutable_op" = "generate" ]; then
-        select_lists_of_frozen_files
-        update_lists_of_frozen_files
     else
-        echo "Please specify one of -f, -u, -r, -g options with mutable command"
+        echo "Please specify one of -u, -r, -g, -s options with mutable command"
         exit 1
     fi
 fi
@@ -404,9 +350,7 @@ if [ -n "$new_list" ]; then
     if [ $use_current_ima_list -eq 0 ]; then
         if [ -z "$search_dirs" ]; then
             search_dirs="$(cat /proc/mounts |
-            awk '$1 ~ /^\// {
-                     printf("%s ", $2);
-                 }')"
+                           awk '$1 ~ /^\// { printf("%s ", $2); }')"
         fi
 
         set -f
@@ -425,56 +369,42 @@ if [ -n "$new_list" ]; then
     awk_opt="$(get_awk_opt "$search_dirs" "$exclude_dirs")"
 
     # create an ASCII file containing the digests of unknown measurements
-    echo "Create $new_list with digests of unknown files"
-    cat /sys/kernel/security/ima/ascii_runtime_measurements |
-       sed 's/ \/sysroot/ /' | awk "$awk_opt" | \
-       awk '$4 != "sha1:0000000000000000000000000000000000000000" {
-                print $4, $5;
-            };' > $new_list
-
-    if [ "$1" = "mutable" ] && [ $add_empty_files -eq 1 ]; then
-        echo "Add empty files to $new_list"
-        digest_empty_file=$(${algorithm}sum < /dev/null | awk '{print $1;}')
-        find $search_dirs -xdev -type f -size 0 $find_opt -exec \
-            echo "${algorithm}:$digest_empty_file {}" \; >> $new_list
-    fi
+    echo "Create digest list of unknown files"
+    cat /sys/kernel/security/ima/ascii_runtime_measurements | \
+        sed 's/\/sysroot//' | awk "$awk_opt" | \
+        awk '$4 != "sha1:0000000000000000000000000000000000000000"' > $new_list
 
     # edit the list of unknown digests
     vi $new_list
 
-    if [ "$1" = "mutable" ] && [ "$mutable_op" = "freeze" ]; then
-        question "Freeze files from $new_list"
-        freeze_files $new_list
-        exit 0
-    fi
-
     question "Generate the digest list"
 
     selected_lists=$new_list
-fi
 
-for list in $selected_lists; do
-    echo "Generate compact list from $list"
-    gen_digest_lists -e $algorithm -d $digest_lists_dir -f ascii -i $list \
-                     $gen_digest_lists_opt $sign_opt $gpg_key_param \
-                     "$gpg_key_name"
+    gen_digest_lists -d $digest_lists_dir -f ima+ima_ng -i $new_list -o append \
+                     -t $compact_type $modifiersopt $sign_opts
+
+    rm $new_list
 
     gen_digest_lists_result=$?
-    if [ $gen_digest_lists_result -ne 0 ]; then
-        break
+
+    if [ $gen_digest_lists_result -eq 0 ] &&
+       [ "$1" = "mutable" ] && [ "$mutable_op" = "generate" ]; then
+        generated_list=$(ls $digest_lists_dir | sort -n | tail -n 1)
+        mkdir -p $backup_dir/$generated_list.orig
     fi
-done
+fi
 
 if [ $gen_digest_lists_result -eq 0 ] && \
-   { [ -n "$selected_lists" ] || [ "$1" = "initial" ]; };  then
-    echo "Set ima_algo extended attribute"
-    modify_digest_lists -e $algorithm -s &> /dev/null
-    modify_digest_lists -e $algorithm -m parser_metadata -s &> /dev/null
+   { [ -n "$new_list" ] || [ "$1" = "distro" ] || [ -n "$signed_lists" ]; } && \
+   [ $gen_initramfs -eq 1 ]; then
     echo "Update initial ram disk"
     if [ -f /usr/sbin/mkinitramfs ]; then
-        mkinitramfs -o /boot/initrd.img-$kernel_ver $kernel_ver
+        detect_mkinitramfs_metadata_opt
+        mkinitramfs -o /boot/initrd.img-$kernel_ver $kernel_ver $metadata_opt
     elif [ -f /usr/bin/dracut ]; then
-        dracut -f -a digestlist --nostrip --kver $kernel_ver
+        detect_dracut_metadata_opt
+        dracut -f --kver $kernel_ver $metadata_opt
     else
         echo "Cannot update initial ram disk"
     fi
