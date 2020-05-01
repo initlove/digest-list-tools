@@ -38,8 +38,8 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		    struct stat *st, struct list_struct *list,
 		    struct list_struct *list_file, enum hash_algo algo,
 		    enum hash_algo ima_algo, bool tlv, bool gen_list,
-		    bool include_lsm_label, bool root_cred, int set_ima_xattr,
-		    char *alt_root, char *caps)
+		    bool include_lsm_label, bool root_cred, bool set_ima_xattr,
+		    bool set_evm_xattr, char *alt_root, char *caps)
 {
 	cap_t c;
 	struct ima_digest *found_digest;
@@ -88,6 +88,12 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 				path, algo, ima_digest,
 				(modifiers & (1 << COMPACT_MOD_IMMUTABLE)),
 				set_ima_xattr);
+			if (ret < 0)
+				return ret;
+		}
+
+		if (set_evm_xattr) {
+			ret = write_evm_xattr(path, algo);
 			if (ret < 0)
 				return ret;
 		}
@@ -155,7 +161,7 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 			}
 		}
 
-		ret = evm_calc_hmac_or_hash(HASH_ALGO_SHA256, evm_digest,
+		ret = evm_calc_hmac_or_hash(algo, evm_digest,
 					    obj_label_len, obj_label,
 					    ima_xattr_len, ima_xattr,
 					    caps_bin_len, caps_bin,
@@ -246,7 +252,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	struct group *grp;
 	int include_ima_digests = 0, only_executables = 0, root_cred = 0;
 	int include_path = 0, include_file = 0, set_ima_xattr = 0;
-	int path_list_ext = 0;
+	int path_list_ext = 0, set_evm_xattr = 0;
 	int fts_flags = (FTS_PHYSICAL | FTS_COMFOLLOW | FTS_NOCHDIR | FTS_XDEV);
 	int ret, i, digest_lists_dirfd, fd, prefix_len, include_lsm_label = 0;
 
@@ -281,8 +287,12 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			root_cred = 1;
 		if (cur->path[0] == 'F')
 			include_path = 1;
-		if (cur->path[0] == 'x')
-			set_ima_xattr = 1;
+		if (cur->path[0] == 'x') {
+			if (!strcmp(&cur->path[2], "evm"))
+				set_evm_xattr = 1;
+			else
+				set_ima_xattr = 1;
+		}
 	}
 
 	if (!digest_lists_dir) {
@@ -452,7 +462,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					list, list_file, algo, ima_algo, tlv,
 					gen_list_path != NULL,
 					include_lsm_label, root_cred, set_ima_xattr,
-					alt_root, cur->attrs[4]);
+					set_evm_xattr, alt_root, cur->attrs[4]);
 				if (!ret)
 					unlink = false;
 				else if (ret < 0 && ret != -EEXIST &&

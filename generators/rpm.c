@@ -63,7 +63,8 @@ static int add_file(int dirfd, char *filename, Header *hdr, u16 type,
 		    struct list_head *head_out, enum hash_algo algo,
 		    enum hash_algo ima_algo, bool tlv, bool include_ima_digests,
 		    bool include_lsm_label, bool only_executables,
-		    bool include_path, bool set_ima_xattr, char *alt_root)
+		    bool include_path, bool set_ima_xattr, int set_evm_xattr,
+		    char *alt_root)
 {
 	const char *ima_digest_str, *filecaps_str, *basename, *dirname;
 	enum pgp_hash_algo pgp_algo;
@@ -191,6 +192,12 @@ static int add_file(int dirfd, char *filename, Header *hdr, u16 type,
 			if (ret < 0)
 				goto out_close;
 
+			if (set_evm_xattr) {
+				ret = write_evm_xattr(file_path, algo);
+				if (ret < 0)
+					return ret;
+			}
+
 			if (include_lsm_label) {
 				ret = get_selinux_label(file_path, alt_root,
 							&obj_label, mode);
@@ -217,7 +224,7 @@ static int add_file(int dirfd, char *filename, Header *hdr, u16 type,
 				rawvfscap_len = 0;
 			}
 
-			ret = evm_calc_hmac_or_hash(HASH_ALGO_SHA256,
+			ret = evm_calc_hmac_or_hash(algo,
 					evm_digest, obj_label_len, obj_label,
 					ima_xattr_len, ima_xattr,
 					rawvfscap_len, (u8 *)&rawvfscap,
@@ -403,7 +410,7 @@ static int parse_options(struct list_head *head_in, bool tlv,
 			 int *include_ima_digests, int *include_lsm_label,
 			 int *only_executables, int *include_path,
 			 char **output_format, char **package,
-			 int *set_ima_xattr)
+			 int *set_ima_xattr, int *set_evm_xattr)
 {
 	struct path_struct *cur;
 
@@ -425,8 +432,12 @@ static int parse_options(struct list_head *head_in, bool tlv,
 			*output_format = &cur->path[2];
 		if (cur->path[0] == 'p')
 			*package = &cur->path[2];
-		if (cur->path[0] == 'x')
-			*set_ima_xattr = 1;
+		if (cur->path[0] == 'x') {
+			if (!strcmp(&cur->path[2], "evm"))
+				*set_evm_xattr = 1;
+			else
+				*set_ima_xattr = 1;
+		}
 	}
 
 	if (output_format) {
@@ -449,7 +460,7 @@ int db_generator(int dirfd, int pos, struct list_head *head_in,
 	Header hdr;
 	rpmdbMatchIterator mi;
 	LIST_HEAD(digest_list_head);
-	int include_ima_digests = 0, include_lsm_label = 0;
+	int include_ima_digests = 0, include_lsm_label = 0, set_evm_xattr = 0;
 	int only_executables = 0, include_path = 0, set_ima_xattr = 0;
 	char *output_format = FORMAT;
 	char *package = NULL;
@@ -458,7 +469,7 @@ int db_generator(int dirfd, int pos, struct list_head *head_in,
 	ret = parse_options(head_in, tlv, &include_ima_digests,
 			    &include_lsm_label, &only_executables,
 			    &include_path, &output_format, &package,
-			    &set_ima_xattr);
+			    &set_ima_xattr, &set_evm_xattr);
 	if (ret < 0)
 		return ret;
 
@@ -504,7 +515,7 @@ int db_generator(int dirfd, int pos, struct list_head *head_in,
 				       head_in, head_out, algo, ima_algo, tlv,
 				       include_ima_digests, include_lsm_label,
 				       only_executables, include_path,
-				       set_ima_xattr, alt_root);
+				       set_ima_xattr, set_evm_xattr, alt_root);
 		else
 			ret = gen_rpm_digest_list(hdr, dirfd, filename,
 						  head_out);
@@ -539,7 +550,7 @@ static int _pkg_generator(int dirfd, int pos, char *path,
 			  bool tlv, char *output_format,
 			  int include_ima_digests, int include_lsm_label,
 			  int only_executables, int include_path,
-			  int set_ima_xattr, char *alt_root)
+			  int set_ima_xattr, int set_evm_xattr, char *alt_root)
 {
 	char filename[NAME_MAX + 1];
 	Header hdr;
@@ -582,7 +593,7 @@ static int _pkg_generator(int dirfd, int pos, char *path,
 				head_in, head_out, algo, ima_algo, tlv,
 				include_ima_digests, include_lsm_label,
 				only_executables, include_path, set_ima_xattr,
-				alt_root);
+				set_evm_xattr, alt_root);
 	else
 		ret = gen_rpm_digest_list(hdr, dirfd, filename, head_out);
 	if (ret < 0 && ret != -ENODATA)
@@ -600,7 +611,7 @@ int pkg_generator(int dirfd, int pos, struct list_head *head_in,
 		  bool tlv, char *alt_root)
 {
 	struct path_struct *cur;
-	int include_ima_digests = 0, include_lsm_label = 0;
+	int include_ima_digests = 0, include_lsm_label = 0, set_evm_xattr = 0;
 	int only_executables = 0, include_path = 0, set_ima_xattr = 0;
 	char *output_format = FORMAT;
 	char *package = NULL;
@@ -618,7 +629,7 @@ int pkg_generator(int dirfd, int pos, struct list_head *head_in,
 	ret = parse_options(head_in, tlv, &include_ima_digests,
 			    &include_lsm_label, &only_executables,
 			    &include_path, &output_format, &package,
-			    &set_ima_xattr);
+			    &set_ima_xattr, &set_evm_xattr);
 	if (ret < 0)
 		return ret;
 
@@ -651,7 +662,8 @@ int pkg_generator(int dirfd, int pos, struct list_head *head_in,
 					type, modifiers, algo, ima_algo, tlv,
 					output_format, include_ima_digests,
 					include_lsm_label, only_executables,
-					include_path, set_ima_xattr, alt_root);
+					include_path, set_ima_xattr,
+					set_evm_xattr, alt_root);
 				if (ret < 0 && ret != -ENOENT &&
 				    ret != -ENODATA)
 					goto out_fts_close;
