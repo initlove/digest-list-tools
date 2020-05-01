@@ -35,7 +35,6 @@ int parser(int fd, struct list_head *head, loff_t size, void *buf,
 	u8 evm_digest[SHA512_DIGEST_SIZE], *evm_digest_ptr;
 	void *bufp = buf, *bufendp = buf + size;
 	struct compact_list_hdr hdr, *hdrp;
-	u8 evm_xattr_value = EVM_XATTR_HMAC;
 	int ret, i, j, count;
 
 	while (bufp < bufendp) {
@@ -222,9 +221,8 @@ int parser(int fd, struct list_head *head, loff_t size, void *buf,
 					    XATTR_NAME_IMA);
 				break;
 			case PARSER_OP_ADD_EVM_XATTR:
-				lsetxattr((char *)items_data(ID_PATH),
-					  XATTR_NAME_EVM, &evm_xattr_value, 1,
-					  0);
+				write_evm_xattr((char *)items_data(ID_PATH),
+						 hdr.algo);
 				break;
 			case PARSER_OP_REMOVE_EVM_XATTR:
 				if (fs_magic == TMPFS_MAGIC)

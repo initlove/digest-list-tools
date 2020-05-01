@@ -20,6 +20,7 @@
 
 #include "parser_lib.h"
 #include "selinux.h"
+#include "xattr.h"
 
 enum pgp_hash_algo {
 	PGP_HASH_MD5			= 1,
@@ -73,7 +74,6 @@ int parser(int fd, struct list_head *head, loff_t buf_size, void *buf,
 	u8 digest[SHA512_DIGEST_SIZE];
 	u8 evm_digest[SHA512_DIGEST_SIZE];
 	char path[PATH_MAX];
-	u8 evm_xattr_value = EVM_XATTR_HMAC;
 	int ret = 0, i;
 
 	const unsigned char rpm_header_magic[8] = {
@@ -266,7 +266,7 @@ int parser(int fd, struct list_head *head, loff_t buf_size, void *buf,
 			removexattr(path, XATTR_NAME_IMA);
 			break;
 		case PARSER_OP_ADD_EVM_XATTR:
-			lsetxattr(path, XATTR_NAME_EVM, &evm_xattr_value, 1, 0);
+			write_evm_xattr(path, algo);
 			break;
 		case PARSER_OP_REMOVE_EVM_XATTR:
 			removexattr(path, XATTR_NAME_EVM);

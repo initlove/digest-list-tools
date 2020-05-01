@@ -64,6 +64,23 @@ out:
 	return ret;
 }
 
+int write_evm_xattr(char *path, enum hash_algo algo)
+{
+	struct signature_v2_hdr hdr = { 0 };
+	int ret;
+
+	hdr.type = EVM_IMA_XATTR_DIGEST_LIST;
+	hdr.version = 2;
+	hdr.hash_algo = algo;
+
+	ret = lsetxattr(path, XATTR_NAME_EVM, &hdr,
+			offsetof(struct signature_v2_hdr, keyid), 0);
+	if (ret < 0)
+		printf("Cannot add %s xattr\n", XATTR_NAME_EVM);
+
+	return ret;
+}
+
 int parse_ima_xattr(u8 *buf, size_t buf_len, u8 **keyid, size_t *keyid_len,
 		    u8 **sig, size_t *sig_len, enum hash_algo *algo)
 {

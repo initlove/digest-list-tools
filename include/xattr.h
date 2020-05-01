@@ -19,6 +19,7 @@
 
 int write_ima_xattr(int dirfd, char *path, u8 *keyid, size_t keyid_len,
 		    u8 *sig, size_t sig_len, enum hash_algo algo);
+int write_evm_xattr(char *path, enum hash_algo algo);
 int parse_ima_xattr(u8 *buf, size_t buf_len, u8 **keyid, size_t *keyid_len,
 		    u8 **sig, size_t *sig_len, enum hash_algo *algo);
 int read_ima_xattr(int dirfd, char *path, u8 **buf, size_t *buf_len,
