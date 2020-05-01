@@ -29,8 +29,10 @@ int write_ima_xattr(int dirfd, char *path, u8 *keyid, size_t keyid_len,
 
 	xattr_buf_len = sizeof(*hdr) + sig_len;
 	xattr_buf = calloc(sizeof(u8), xattr_buf_len);
-	if (!xattr_buf)
+	if (!xattr_buf) {
+		printf("Out of memory\n");
 		return -ENOMEM;
+	}
 
 	hdr = (struct signature_v2_hdr *)xattr_buf;
 	hdr->type = EVM_IMA_XATTR_DIGSIG;
@@ -58,10 +60,11 @@ int write_ima_xattr(int dirfd, char *path, u8 *keyid, size_t keyid_len,
 	}
 out:
 	if (ret < 0)
-		printf("Cannot add %s xattr\n", XATTR_NAME_IMA);
+		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_IMA, path,
+		       strerror(errno));
 
 	free(xattr_buf);
-	return ret;
+	return 0;
 }
 
 int write_evm_xattr(char *path, enum hash_algo algo)
@@ -76,9 +79,10 @@ int write_evm_xattr(char *path, enum hash_algo algo)
 	ret = lsetxattr(path, XATTR_NAME_EVM, &hdr,
 			offsetof(struct signature_v2_hdr, keyid), 0);
 	if (ret < 0)
-		printf("Cannot add %s xattr\n", XATTR_NAME_EVM);
+		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_EVM, path,
+		       strerror(errno));
 
-	return ret;
+	return 0;
 }
 
 int parse_ima_xattr(u8 *buf, size_t buf_len, u8 **keyid, size_t *keyid_len,
@@ -146,6 +150,7 @@ int gen_write_ima_xattr(u8 *buf, int *buf_len, char *path, u8 algo, u8 *digest,
 			bool immutable, bool write)
 {
 	struct evm_ima_xattr_data *ima_xattr = (struct evm_ima_xattr_data *)buf;
+	int ret;
 
 	*buf_len = 1 + 1 + hash_digest_size[algo];
 	ima_xattr->type = IMA_XATTR_DIGEST_NG;
@@ -155,5 +160,10 @@ int gen_write_ima_xattr(u8 *buf, int *buf_len, char *path, u8 algo, u8 *digest,
 	if (!write)
 		return 0;
 
-	return lsetxattr(path, XATTR_NAME_IMA, buf, *buf_len, 0);
+	ret = lsetxattr(path, XATTR_NAME_IMA, buf, *buf_len, 0);
+	if (ret < 0)
+		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_IMA, path,
+		       strerror(errno));
+
+	return 0;
 }
