@@ -114,7 +114,7 @@ static void test_compact_tlv_parser(void **state)
 	const char compact_tlv_str[] = "compact_tlv-test";
 	const char generator_str[] = "generator";
 	const char parser_str[] = "parser";
-	char path[PATH_MAX];
+	char path[PATH_MAX], lsm_opt[] = "l:";
 	LIST_HEAD(generator_lib_head);
 	LIST_HEAD(parser_lib_head);
 	LIST_HEAD(head_in);
@@ -144,6 +144,9 @@ static void test_compact_tlv_parser(void **state)
 	assert_non_null(generator_lib);
 
 	ret = add_path_struct(path, NULL, &head_in);
+	assert_return_code(ret, 0);
+
+	ret = add_path_struct(lsm_opt, NULL, &head_in);
 	assert_return_code(ret, 0);
 
 	ret = ((generator_func)generator_lib->func)(dirfd, 0, &head_in,
