@@ -26,7 +26,7 @@
 #include "lib.h"
 #include "compact_list.h"
 
-#define RPM_HEADER "tests/1-digestlist-rpm-libxslt-1.1.29-4.fc27-x86_64"
+#define RPM_HEADER "1-digestlist-rpm-libxslt-1.1.29-4.fc27-x86_64"
 #define NEW_COMPACT_LIST "test_compact_list"
 
 

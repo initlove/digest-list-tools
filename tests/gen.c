@@ -27,9 +27,9 @@ static void test_gen(void **state)
 	int ret;
 
 	if (fork() == 0) {
-		execlp("src/gen_digest_lists", "gen_digest_lists",
+		execlp("../src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "append", "-f", "compact",
-		       "-i", "I:src/upload_digest_lists", "-d", "test", NULL);
+		       "-i", "I:../src/upload_digest_lists", "-d", "test", NULL);
 	}
 
 	wait(NULL);
@@ -38,9 +38,9 @@ static void test_gen(void **state)
 	assert_return_code(ret, 0);
 
 	if (fork() == 0) {
-		execlp("src/gen_digest_lists", "gen_digest_lists",
+		execlp("../src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "add", "-f", "compact", "-p", "0",
-		       "-i", "I:src/upload_digest_lists", "-d", "test", NULL);
+		       "-i", "I:../src/upload_digest_lists", "-d", "test", NULL);
 	}
 
 	wait(NULL);
@@ -49,7 +49,7 @@ static void test_gen(void **state)
 	assert_return_code(ret, 0);
 
 	if (fork() == 0) {
-		execlp("src/gen_digest_lists", "gen_digest_lists",
+		execlp("../src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "remove", "-p", "0", "-d", "test",
 		       NULL);
 	}
@@ -57,7 +57,7 @@ static void test_gen(void **state)
 	wait(NULL);
 
 	if (fork() == 0) {
-		execlp("src/gen_digest_lists", "gen_digest_lists",
+		execlp("../src/gen_digest_lists", "gen_digest_lists",
 		       "-t", "parser", "-o", "remove", "-p", "0", "-d", "test",
 		       NULL);
 	}
