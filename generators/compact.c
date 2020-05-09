@@ -81,7 +81,7 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		goto out;
 	}
 
-	if (type == COMPACT_METADATA) {
+	if (type == COMPACT_METADATA || tlv) {
 		ima_xattr_len = getxattr(path, XATTR_NAME_IMA, NULL, 0);
 		if (!gen_ima_xattr &&
 		    ima_xattr_len > 0 && ima_xattr_len < sizeof(ima_xattr)) {
@@ -120,6 +120,8 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 				ret = -EACCES;
 				goto out;
 			}
+		} else {
+			obj_label_len = 0;
 		}
 
 		if (include_lsm_label == 2) {
@@ -178,7 +180,8 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		if (ret < 0)
 			goto out;
 
-		digest = evm_digest;
+		if (type == COMPACT_METADATA)
+			digest = evm_digest;
 	}
 
 	if (!tlv) {
