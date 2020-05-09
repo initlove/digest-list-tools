@@ -1,7 +1,6 @@
 if CMOCKA
 TESTS_ENVIRONMENT = \
-	LD_LIBRARY_PATH=$(top_srcdir)/lib/.libs:$(top_srcdir)/parsers/.libs:$(top_srcdir)/generators/.libs;
-	export LD_LIBRARY_PATH;
+	LD_LIBRARY_PATH=$(top_srcdir)/lib/.libs:$(top_srcdir)/parsers/.libs:$(top_srcdir)/generators/.libs; export LD_LIBRARY_PATH;
 
 check_PROGRAMS=lib gen compact_tlv
 TESTS = $(check_PROGRAMS)
