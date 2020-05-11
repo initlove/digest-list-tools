@@ -248,7 +248,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	time_t t = time(NULL);
 	bool unlink = true;
 	struct tm tm;
-	struct stat st;
+	struct stat st, *statp;
 	LIST_HEAD(list_head);
 	char *attrs[ATTR__LAST];
 	struct passwd *pwd;
@@ -418,6 +418,9 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			switch (ftsent->fts_info) {
 			case FTS_F:
 				include_file = 0;
+				statp = ftsent->fts_statp;
+				if (path_list_ext)
+					statp = &st;
 
 				if (include_path && only_executables) {
 					list_for_each_entry(cur_i, head_in,
@@ -438,7 +441,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 				}
 
 				if (only_executables &&
-				    (ftsent->fts_statp->st_mode & S_IXUGO))
+				    (statp->st_mode & S_IXUGO))
 					include_file = 1;
 
 				if (!include_file)
@@ -460,8 +463,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					continue;
 
 				ret = add_file(dirfd, fd, ftsent->fts_path,
-					type, modifiers, path_list_ext ?
-					&st : ftsent->fts_statp,
+					type, modifiers, statp,
 					list, list_file, algo, ima_algo, tlv,
 					gen_list_path != NULL,
 					include_lsm_label, root_cred, set_ima_xattr,
