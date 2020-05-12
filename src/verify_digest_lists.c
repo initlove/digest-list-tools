@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
 	char *digest_list_filename = NULL;
 	LIST_HEAD(key_head);
 
-	while ((c = getopt(argc, argv, "d:vh")) != -1) {
+	while ((c = getopt(argc, argv, "d:f:vh")) != -1) {
 		switch (c) {
 		case 'd':
 			cur_dir = optarg;
