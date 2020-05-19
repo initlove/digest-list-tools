@@ -21,6 +21,8 @@ install() {
 
     inst_dir /etc/ima/digest_lists
     inst_multiple /etc/ima/digest_lists/*
+    inst_binary find
+    inst_binary basename
 #    inst_binary upload_digest_lists
 #    inst_libdir_file "digestlist/libparser-*.so"
 #    libc=$(realpath $(ldd /usr/bin/upload_digest_lists | grep libc.so | \
