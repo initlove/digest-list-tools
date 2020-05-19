@@ -8,7 +8,7 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 License:        GPL-2.0
 Url:            https://github.com/euleros/digest-list-tools
 BuildRequires:  autoconf automake libcurl-devel libtool rpm-devel dracut gzip
-BuildRequires:  libcap-devel
+BuildRequires:  libcap-devel libcmocka-devel
 BuildRequires:  txt2man
 
 %if 0%{?suse_version}
@@ -31,6 +31,7 @@ This package includes the tools for configure the IMA Digest Lists extension.
 autoreconf -iv
 %configure
 make %{?_smp_mflags}
+make check
 
 %install
 rm -rf $RPM_BUILD_ROOT
@@ -75,6 +76,7 @@ rm -rf $RPM_BUILD_ROOT
 %dir /usr/lib/dracut/modules.d/98digestlist
 %{_prefix}/lib/dracut/modules.d/98digestlist/module-setup.sh
 %{_prefix}/lib/dracut/modules.d/98digestlist/upload_meta_digest_lists.sh
+%{_prefix}/lib/dracut/modules.d/98digestlist/load_digest_lists.sh
 %exclude /usr/lib64/digestlist/*.a
 %exclude /usr/lib64/digestlist/*.la
 %exclude /usr/lib64/libdigestlist-base.a
