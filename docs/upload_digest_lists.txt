@@ -32,6 +32,7 @@ OPTIONS
 	 gen-ima-list: generate IMA digest list with digest list measurement
 	 check-meta: compare metadata between digest lists and filesystem
 	 repair-meta: set metadata from the digest lists to the filesystem
+	 repair-meta-digest-lists: set digest lists metadata
 
 -v: verbose mode
 
@@ -41,12 +42,12 @@ OPTIONS
 EXAMPLES
 Upload digest lists stored in /etc/ima/digest_lists.
 
-# upload_digest_lists -d /etc/ima/digest_lists
+# upload_digest_lists -d /etc/ima/digest_lists -p add-digest
 
 Convert all digest lists in /etc/ima/digest_lists to the compact format and
 save the converted lists to converted_lists.
 
-# upload_digest_lists -d /etc/ima/digest_lists -o converted_lists
+# upload_digest_lists -d /etc/ima/digest_lists -p add-digest -o converted_lists
 
 
 AUTHOR

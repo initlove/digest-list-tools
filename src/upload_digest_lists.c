@@ -102,6 +102,7 @@ static void usage(char *progname)
 	       "\t\tgen-ima-list: generate IMA digest list with digest list measurement\n"
 	       "\t\tcheck-meta: compare metadata between digest lists and filesystem\n"
 	       "\t\trepair-meta: set metadata from the digest lists to the filesystem\n"
+	       "\t\trepair-meta-digest-lists: set digest lists metadata\n"
 	       "\t-v: verbose mode\n"
 	       "\t-h: display help\n");
 }
