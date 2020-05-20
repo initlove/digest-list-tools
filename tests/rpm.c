@@ -159,7 +159,7 @@ static void test_rpm_parser(void **state)
 	assert_return_code(ret, 0);
 
 	ret = ((parser_func)lib->func)(fd_compact_list, &list_head, size, buf,
-				       PARSER_OP_ADD_DIGEST, NULL);
+				       PARSER_OP_ADD_DIGEST);
 	assert_return_code(ret, 0);
 
 	munmap(buf, size);

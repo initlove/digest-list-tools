@@ -21,7 +21,6 @@
 #define IMA_KEY_PATH "/etc/keys/x509_ima.der"
 
 enum parser_ops { PARSER_OP_ADD_DIGEST, PARSER_OP_ADD_DIGEST_TO_HTABLE,
-		  PARSER_OP_UPDATE_DIGEST, PARSER_OP_RESTORE_FILES,
 		  PARSER_OP_ADD_META_DIGEST,
 		  PARSER_OP_ADD_META_DIGEST_TO_HTABLE,
 		  PARSER_OP_ADD_IMA_XATTR, PARSER_OP_REMOVE_IMA_XATTR,
@@ -84,8 +83,7 @@ typedef int (*generator_func)(int dirfd, int pos, struct list_head *head_in,
 			      enum hash_algo algo, enum hash_algo ima_algo,
 			      bool tlv, char *alt_root);
 typedef int (*parser_func)(int imafd, struct list_head *head,
-			   loff_t size, void *buf, enum parser_ops op,
-			   char *backup_dir);
+			   loff_t size, void *buf, enum parser_ops op);
 
 int gen_filename_prefix(char *filename, int filename_len, int pos,
 			const char *format, enum compact_types type);
@@ -104,10 +102,10 @@ int digest_list_add_metadata(int dirfd, int fd, char *digest_list_filename,
 int digest_list_upload(int dirfd, int fd, struct list_head *head,
 		       struct list_head *parser_lib_head,
 		       char *digest_list_filename, enum parser_ops op,
-		       char *backup_dir, char *digest_lists_dir);
+		       char *digest_lists_dir);
 int process_lists(int dirfd, int fd, int save, int verbose,
 		  struct list_head *head, enum compact_types type,
-		  enum parser_ops op, char *backup_dir, char *digest_lists_dir,
+		  enum parser_ops op, char *digest_lists_dir,
 		  char *filename);
 
 #endif /*_COMPACT_LIST_H*/

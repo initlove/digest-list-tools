@@ -224,8 +224,6 @@ int parser(int fd, struct list_head *head, loff_t buf_size, void *buf,
 			if (ret == -EEXIST)
 				ret = 0;
 			break;
-		case PARSER_OP_UPDATE_DIGEST:
-			break;
 		case PARSER_OP_ADD_META_DIGEST:
 		case PARSER_OP_ADD_META_DIGEST_TO_HTABLE:
 			ret = get_selinux_label(path, NULL, &obj_label, mode);
@@ -255,8 +253,6 @@ int parser(int fd, struct list_head *head, loff_t buf_size, void *buf,
 
 			ret = add_metadata_digest(fd, head, modifiers,
 						  evm_digest);
-			break;
-		case PARSER_OP_RESTORE_FILES:
 			break;
 		case PARSER_OP_ADD_IMA_XATTR:
 			ret = add_ima_xattr(fd, head, COMPACT_FILE, modifiers,

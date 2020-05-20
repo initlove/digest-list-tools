@@ -23,7 +23,7 @@
 #define items_data_len(id) (items[id] ? items[id]->len : 0)
 
 int parser(int fd, struct list_head *head, loff_t size, void *buf,
-	   enum parser_ops op, char *backup_dir)
+	   enum parser_ops op)
 {
 	u32 len;
 	u16 modifiers;
@@ -150,17 +150,9 @@ int parser(int fd, struct list_head *head, loff_t size, void *buf,
 				if (ret == -EEXIST)
 					ret = 0;
 				break;
-			case PARSER_OP_UPDATE_DIGEST:
-				ret = update_digest(hdr.algo,
-						    items_data(ID_DIGEST),
-						    (char *)items_data(ID_PATH),
-						    backup_dir);
-				if (ret < 0)
-					break;
 			case PARSER_OP_ADD_META_DIGEST:
 			case PARSER_OP_ADD_META_DIGEST_TO_HTABLE:
-				if (!items_data(ID_EVM_DIGEST) ||
-				    op == PARSER_OP_UPDATE_DIGEST) {
+				if (!items_data(ID_EVM_DIGEST)) {
 					ret = calc_metadata_digest(fd, head,
 					   hdr.type, modifiers,
 					   hdr.algo, items_data(ID_DIGEST),
@@ -178,8 +170,7 @@ int parser(int fd, struct list_head *head, loff_t size, void *buf,
 						items_data(ID_EVM_DIGEST);
 				}
 
-				if (op == PARSER_OP_UPDATE_DIGEST &&
-				    items_data(ID_EVM_DIGEST)) {
+				if (items_data(ID_EVM_DIGEST)) {
 					memcpy(items[ID_EVM_DIGEST]->data,
 					       evm_digest,
 					       hash_digest_size[evm_algo]);
@@ -199,10 +190,6 @@ int parser(int fd, struct list_head *head, loff_t size, void *buf,
 
 				ret = add_metadata_digest(fd, head, modifiers,
 							  evm_digest_ptr);
-				break;
-			case PARSER_OP_RESTORE_FILES:
-				ret = restore_files((char *)items_data(ID_PATH),
-						    backup_dir);
 				break;
 			case PARSER_OP_ADD_IMA_XATTR:
 				if (fs_magic == TMPFS_MAGIC)

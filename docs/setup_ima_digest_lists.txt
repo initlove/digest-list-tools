@@ -17,9 +17,9 @@ parser: generate digest lists for the parser
 
 distro: generate digest lists from the RPM database
 
-immutable: generate a digest list of immutable files from IMA measurements
+immutable: generate a digest list of immutable files
 
-mutable: generate a digest list of mutable files from IMA measurements
+mutable: generate a digest list of mutable files
 
 
 OPTIONS
@@ -34,10 +34,6 @@ OPTIONS
 -D <search dirs>: directories containing immutable/mutable files
 
 -E <exclude dirs>: excluded directories
-
--u: update digest lists of mutable files
-
--r: replace mutable files with backup
 
 -g: generate digest lists of mutable files
 

@@ -12,8 +12,6 @@ lists to a file.
 
 
 OPTIONS
--b <backup_dir>: specify backup dir
-
 -d <directory>: directory containing digest lists
 
 -f <filename>: filename in the digest list directory

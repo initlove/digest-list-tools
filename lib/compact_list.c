@@ -618,7 +618,7 @@ out:
 int digest_list_upload(int dirfd, int fd, struct list_head *head,
 		       struct list_head *parser_lib_head,
 		       char *digest_list_filename, enum parser_ops op,
-		       char *backup_dir, char *digest_lists_dir)
+		       char *digest_lists_dir)
 {
 	char *list_id, *format_start, *format_end;
 	struct lib *parser;
@@ -638,12 +638,7 @@ int digest_list_upload(int dirfd, int fd, struct list_head *head,
 	if (!format_end)
 		return -EINVAL;
 
-	if (op == PARSER_OP_UPDATE_DIGEST)
-		ret = read_write_file_from_path(dirfd, digest_list_filename,
-						&buf, &size);
-	else
-		ret = read_file_from_path(dirfd, digest_list_filename, &buf,
-					  &size);
+	ret = read_file_from_path(dirfd, digest_list_filename, &buf, &size);
 	if (ret)
 		return ret;
 
@@ -674,7 +669,7 @@ int digest_list_upload(int dirfd, int fd, struct list_head *head,
 		goto out;
 	}
 
-	ret = ((parser_func)parser->func)(fd, head, size, buf, op, backup_dir);
+	ret = ((parser_func)parser->func)(fd, head, size, buf, op);
 out_add_metadata:
 	if (ret < 0)
 		goto out;
@@ -690,13 +685,12 @@ out:
 
 int process_lists(int dirfd, int fd, int save, int verbose,
 		  struct list_head *head, enum compact_types type,
-		  enum parser_ops op, char *backup_dir, char *digest_lists_dir,
-		  char *filename)
+		  enum parser_ops op, char *digest_lists_dir, char *filename)
 {
 	struct dirent **digest_lists;
 	LIST_HEAD(parser_lib_head);
 	struct key_struct *k;
-	char path[PATH_MAX], path_sig[PATH_MAX], *path_ptr = NULL;
+	char path[PATH_MAX], path_sig[PATH_MAX];
 	u8 digest[SHA512_DIGEST_SIZE];
 	u8 xattr[2 + SHA512_DIGEST_SIZE];
 	void *sig;
@@ -797,16 +791,10 @@ int process_lists(int dirfd, int fd, int save, int verbose,
 
 			break;
 		default:
-			if (backup_dir) {
-				snprintf(path, sizeof(path), "%s/%s",
-					 backup_dir, digest_lists[i]->d_name);
-				path_ptr = path;
-			}
-
 			ret = digest_list_upload(dirfd, fd, head,
 						 &parser_lib_head,
 						 digest_lists[i]->d_name, op,
-						 path_ptr, digest_lists_dir);
+						 digest_lists_dir);
 			break;
 		}
 

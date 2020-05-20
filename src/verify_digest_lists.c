@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 
 	for (i = 0; i < COMPACT__LAST; i++) {
 		ret = process_lists(dirfd, -1, 0, verbose, &key_head, i,
-				    PARSER_OP_VERIFY, NULL, cur_dir,
+				    PARSER_OP_VERIFY, cur_dir,
 				    digest_list_filename);
 		if (ret < 0)
 			printf("Cannot access digest lists, ret: %d\n", ret);

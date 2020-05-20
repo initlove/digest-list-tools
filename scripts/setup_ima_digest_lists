@@ -15,7 +15,6 @@
 
 OPTIND=2
 digest_lists_dir="/etc/ima/digest_lists"
-backup_dir="/backup"
 parser_path="/usr/bin/upload_digest_lists"
 gen_digest_lists_result=0
 use_current_ima_list=0
@@ -73,8 +72,6 @@ function usage() {
     echo -e "\t-V <kernel version>: kernel version"
     echo -e "\t-D <search dirs>: directories containing immutable/mutable files"
     echo -e "\t-E <exclude dirs>: excluded directories"
-    echo -e "\t-u: update digest lists of mutable files"
-    echo -e "\t-r: replace mutable files with backup"
     echo -e "\t-g: generate digest lists of mutable files"
     echo -e "\t-a: run initramfs generator"
     echo -e "\t-s: sign digest list"
@@ -94,7 +91,7 @@ if [ -e "/etc/os-release" ]; then
     source /etc/os-release
 fi
 
-while getopts "d:it:V:D:eE:urgasv:x:lh" opt; do
+while getopts "d:it:V:D:eE:gasv:x:lh" opt; do
     case "$opt" in
     d)  digest_lists_dir=$OPTARG
         ;;
@@ -113,10 +110,6 @@ while getopts "d:it:V:D:eE:urgasv:x:lh" opt; do
     E)  for o in $OPTARG; do
             gen_digest_lists_opt="$gen_digest_lists_opt -i E:$o"
         done
-        ;;
-    u)  mutable_op="update"
-        ;;
-    r)  mutable_op="replace"
         ;;
     g)  mutable_op="generate"
         ;;
@@ -235,17 +228,6 @@ elif [ "$1" = "immutable" ]; then
 elif [ "$1" = "mutable" ]; then
     if [ "$mutable_op" = "generate" ]; then
         new_list="$(mktemp)"
-    elif [ "$mutable_op" = "update" ]; then
-        ${parser_path} -d $digest_lists_dir -b /backup -p update-digest
-    elif [ "$mutable_op" = "replace" ]; then
-        ${parser_path} -d $digest_lists_dir -b /backup -p restore-files
-        ${parser_path} -p rm-ima-xattr
-        ${parser_path} -p rm-evm-xattr
-        ${parser_path} -p rm-infoflow-xattr
-        ${parser_path} -p add-ima-xattr
-        rm /.digestlist_state
-        /usr/lib/dracut/dracut-initramfs-restore
-        systemctl --force reboot
     elif [ -n "$sign_opts" ]; then
         for file in $(verify_digest_lists | \
                       awk '{ if ($3 == "process") print $4 }'); do
@@ -253,7 +235,7 @@ elif [ "$1" = "mutable" ]; then
             signed_lists="$signed_lists $file"
         done
     else
-        echo "Please specify one of -u, -r, -g, -s options with mutable command"
+        echo "Please specify one of -g, -s options with mutable command"
         exit 1
     fi
 fi

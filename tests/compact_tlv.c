@@ -175,7 +175,7 @@ static void test_compact_tlv_parser(void **state)
 
 	ret = ((parser_func)parser_lib->func)(fd_compact_list, &list_head,
 					      gen_list_size, gen_list_buf,
-					      PARSER_OP_ADD_DIGEST, NULL);
+					      PARSER_OP_ADD_DIGEST);
 	assert_return_code(ret, 0);
 
 	ret = compact_list_flush_all(fd_compact_list, &list_head);
@@ -201,8 +201,7 @@ static void test_compact_tlv_parser(void **state)
 
 	ret = ((parser_func)parser_lib->func)(fd_compact_list, &list_head,
 					      gen_list_size, gen_list_buf,
-					      PARSER_OP_ADD_META_DIGEST,
-					      NULL);
+					      PARSER_OP_ADD_META_DIGEST);
 	assert_return_code(ret, 0);
 
 	ret = compact_list_flush_all(fd_compact_list, &list_head);

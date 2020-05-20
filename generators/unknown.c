@@ -352,7 +352,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		ret = process_lists(digest_lists_dirfd, -1, 0, 0, &list_head, i,
 				    (type == COMPACT_METADATA) ?
 				    PARSER_OP_ADD_META_DIGEST_TO_HTABLE :
-				    PARSER_OP_ADD_DIGEST_TO_HTABLE, NULL,
+				    PARSER_OP_ADD_DIGEST_TO_HTABLE,
 				    digest_lists_dir, filename);
 		if (ret < 0)
 			goto out_selinux;

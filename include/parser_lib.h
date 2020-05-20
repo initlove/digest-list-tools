@@ -19,8 +19,6 @@
 
 int add_digest(int fd, struct list_head *head, u16 type, u16 modifiers,
 	       u16 algo, u8 *digest);
-int update_digest(u16 algo, u8 *digest, char *src_path, char *backup_dir);
-int restore_files(char *dest_path, char *backup_dir);
 int calc_metadata_digest(int fd, struct list_head *head, u16 type,
 			 u16 modifiers, u16 algo, u8 *digest, u8 *evm_digest,
 			 char *path, uid_t uid, gid_t gid, mode_t mode,

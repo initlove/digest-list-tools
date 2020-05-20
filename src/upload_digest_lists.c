@@ -86,8 +86,7 @@ static void usage(char *progname)
 {
 	printf("Usage: %s <options>\n", progname);
 	printf("Options:\n");
-	printf("\t-b <backup_dir>: specify backup dir\n"
-	       "\t-d <directory>: directory containing digest lists\n"
+	printf("\t-d <directory>: directory containing digest lists\n"
 	       "\t-f <filename>: filename in the digest list directory\n"
 	       "\t-o <file>: write converted digest list to a file\n"
 	       "\t-p <op>: specify parser operation:\n"
@@ -111,16 +110,13 @@ int main(int argc, char *argv[])
 {
 	int c, i, dirfd, fd = -1, verbose = 0, ret = -EINVAL;
 	int mount_sysfs = 0, mount_securityfs = 0;
-	char *cur_dir = DEFAULT_DIR, *output = NULL, *backup_dir = NULL;
+	char *cur_dir = DEFAULT_DIR, *output = NULL;
 	enum parser_ops op = PARSER_OP__LAST;
 	char *digest_list_filename = NULL;
 	LIST_HEAD(list_head);
 
-	while ((c = getopt(argc, argv, "b:d:o:p:f:vh")) != -1) {
+	while ((c = getopt(argc, argv, "d:o:p:f:vh")) != -1) {
 		switch (c) {
-		case 'b':
-			backup_dir = optarg;
-			break;
 		case 'd':
 			cur_dir = optarg;
 			break;
@@ -133,12 +129,6 @@ int main(int argc, char *argv[])
 		case 'p':
 			if (!strcmp(optarg, "add-digest")) {
 				op = PARSER_OP_ADD_DIGEST;
-			} else if (!strcmp(optarg, "update-digest")) {
-				op = PARSER_OP_UPDATE_DIGEST;
-				fd = -2;
-			} else if (!strcmp(optarg, "restore-files")) {
-				op = PARSER_OP_RESTORE_FILES;
-				fd = -2;
 			} else if (!strcmp(optarg, "add-meta-digest")) {
 				op = PARSER_OP_ADD_META_DIGEST;
 			} else if (!strcmp(optarg, "add-ima-xattr")) {
@@ -193,17 +183,6 @@ int main(int argc, char *argv[])
 		return -EINVAL;
 	}
 
-	if (op == PARSER_OP_UPDATE_DIGEST && output) {
-		printf("Output file cannot be specified for "
-		       "update-digest op\n");
-		return -EINVAL;
-	}
-
-	if (op == PARSER_OP_UPDATE_DIGEST && !backup_dir) {
-		printf("Backup dir not specified for update-digest op\n");
-		return -EINVAL;
-	}
-
 	dirfd = open(cur_dir, O_RDONLY | O_DIRECTORY);
 	if (dirfd < 0) {
 		printf("Unable to open %s, ret: %d\n", cur_dir, dirfd);
@@ -235,7 +214,7 @@ int main(int argc, char *argv[])
 
 	for (i = 0; i < COMPACT__LAST; i++) {
 		ret = process_lists(dirfd, fd, (output != NULL), verbose,
-				    &list_head, i, op, backup_dir, cur_dir,
+				    &list_head, i, op, cur_dir,
 				    digest_list_filename);
 		if (ret < 0) {
 			printf("Cannot upload digest lists, ret: %d\n", ret);
