@@ -25,6 +25,7 @@
 #include <linux/fs.h>
 #include <linux/magic.h>
 #include <sys/capability.h>
+#include <selinux/selinux.h>
 
 #include "compact_list.h"
 #include "crypto.h"
@@ -34,6 +35,10 @@
 #include "cap.h"
 #include "ima_list.h"
 #include "selinux.h"
+
+#define DIGEST_LIST_LABEL "system_u:object_r:etc_t:s0"
+#define DIGEST_LIST_MODE 0644
+#define DIGEST_LIST_ALGO HASH_ALGO_SHA256
 
 char *compact_types_str[COMPACT__LAST] = {
 	[COMPACT_KEY] = "key",
@@ -610,18 +615,6 @@ out:
 	return ret;
 }
 
-int digest_list_update_evm_xattr(int dirfd, char *digest_list_filename)
-{
-	u8 evm_xattr_value = EVM_XATTR_HMAC;
-	int fd;
-
-	fd = openat(dirfd, digest_list_filename, O_RDONLY);
-	if (fd < 0)
-		return -EACCES;
-
-	return fsetxattr(fd, XATTR_NAME_EVM, &evm_xattr_value, 1, 0);
-}
-
 int digest_list_upload(int dirfd, int fd, struct list_head *head,
 		       struct list_head *parser_lib_head,
 		       char *digest_list_filename, enum parser_ops op,
@@ -690,8 +683,6 @@ out_add_metadata:
 		ret = digest_list_add_metadata(dirfd, fd, digest_list_filename,
 					       digest_lists_dir, head, buf,
 					       size);
-	else if (op == PARSER_OP_ADD_EVM_XATTR)
-		ret = digest_list_update_evm_xattr(dirfd, digest_list_filename);
 out:
 	munmap(buf, size);
 	return ret;
@@ -705,8 +696,12 @@ int process_lists(int dirfd, int fd, int save, int verbose,
 	struct dirent **digest_lists;
 	LIST_HEAD(parser_lib_head);
 	struct key_struct *k;
-	char path[PATH_MAX], *path_ptr = NULL;
-	int ret, i, n;
+	char path[PATH_MAX], path_sig[PATH_MAX], *path_ptr = NULL;
+	u8 digest[SHA512_DIGEST_SIZE];
+	u8 xattr[2 + SHA512_DIGEST_SIZE];
+	void *sig;
+	loff_t sig_len;
+	int ret, i, n, xattr_len;
 
 	n = scandirat(dirfd, ".", &digest_lists, filter[type], compare_lists);
 	if (n == -1) {
@@ -753,6 +748,53 @@ int process_lists(int dirfd, int fd, int save, int verbose,
 		case PARSER_OP_GEN_IMA_LIST:
 			ret = ima_generate_entry(dirfd, fd, digest_lists_dir,
 						 digest_lists[i]->d_name);
+			break;
+		case PARSER_OP_REPAIR_META_DIGEST_LISTS:
+			snprintf(path, sizeof(path), "%s/%s", digest_lists_dir,
+				 digest_lists[i]->d_name);
+			snprintf(path_sig, sizeof(path_sig), "%s.sig/%s.sig",
+				 digest_lists_dir, digest_lists[i]->d_name);
+
+			ret = read_file_from_path(-1, path_sig, &sig, &sig_len);
+			if (ret < 0)
+				break;
+
+			ret = lsetxattr(path, XATTR_NAME_EVM, sig, sig_len, 0);
+
+			munmap(sig, sig_len);
+
+			if (ret < 0) {
+				printf("Cannot set EVM xattr to %s\n", path);
+				break;
+			}
+
+			ret = lsetfilecon(path, DIGEST_LIST_LABEL);
+			if (ret < 0) {
+				printf("Cannot set SELinux label %s to %s\n",
+				       DIGEST_LIST_LABEL, path);
+				break;
+			}
+
+			ret = chmod(path, DIGEST_LIST_MODE);
+			if (ret < 0) {
+				printf("Cannot set mode %d to %s\n",
+				       DIGEST_LIST_MODE, path);
+				break;
+			}
+
+			ret = calc_file_digest(digest, -1, path,
+					       DIGEST_LIST_ALGO);
+			if (ret < 0) {
+				printf("Cannot calculate digest of %s\n", path);
+				break;
+			}
+
+			ret = gen_write_ima_xattr(xattr, &xattr_len, path,
+						  DIGEST_LIST_ALGO, digest,
+						  true, true);
+			if (ret < 0)
+				printf("Cannot set IMA xattr to %s\n", path);
+
 			break;
 		default:
 			if (backup_dir) {

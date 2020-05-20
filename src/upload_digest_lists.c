@@ -166,6 +166,10 @@ int main(int argc, char *argv[])
 			} else if (!strcmp(optarg, "repair-meta")) {
 				op = PARSER_OP_REPAIR_META;
 				fd = -2;
+			} else if (!strcmp(optarg,
+					   "repair-meta-digest-lists")) {
+				op = PARSER_OP_REPAIR_META_DIGEST_LISTS;
+				fd = -2;
 			} else {
 				printf("Invalid parser op %s\n", optarg);
 				return 1;
