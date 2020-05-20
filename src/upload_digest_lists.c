@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 	int c, i, dirfd, fd = -1, verbose = 0, ret = -EINVAL;
 	int mount_sysfs = 0, mount_securityfs = 0;
 	char *cur_dir = DEFAULT_DIR, *output = NULL, *backup_dir = NULL;
-	enum parser_ops op = PARSER_OP_ADD_DIGEST;
+	enum parser_ops op = PARSER_OP__LAST;
 	char *digest_list_filename = NULL;
 	LIST_HEAD(list_head);
 
@@ -185,6 +185,11 @@ int main(int argc, char *argv[])
 			printf("Unknown option %c\n", optopt);
 			return -EINVAL;
 		}
+	}
+
+	if (op == PARSER_OP__LAST) {
+		printf("Parser operation not specified\n");
+		return -EINVAL;
 	}
 
 	if (op == PARSER_OP_UPDATE_DIGEST && output) {
