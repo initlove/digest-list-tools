@@ -1,5 +1,5 @@
 name:           digest-list-tools
-Version:        0.3.90
+Version:        0.3.91
 Release:        1%{?dist}
 Summary:        Digest list tools
 
@@ -98,6 +98,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
+* Tue Jun 03 2020 Roberto Sassu <roberto.sassu@huawei.com> - 0.3.91
+- Bug fixes
+
 * Fri Apr 17 2020 Roberto Sassu <roberto.sassu@huawei.com> - 0.3.90
 - TLV compact list
 - unknown generator
