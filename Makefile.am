@@ -13,3 +13,5 @@ EXTRA_DIST = AUTHORS \
 	     CHANGES
 
 dist_pkgdata_DATA = README.md
+
+man1_MANS = digest-list-tools.1

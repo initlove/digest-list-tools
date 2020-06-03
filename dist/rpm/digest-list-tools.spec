@@ -9,7 +9,6 @@ License:        GPL-2.0
 Url:            https://github.com/euleros/digest-list-tools
 BuildRequires:  autoconf automake libcurl-devel libtool rpm-devel dracut gzip
 BuildRequires:  libcap-devel libcmocka-devel
-BuildRequires:  txt2man
 
 %if 0%{?suse_version}
 BuildRequires:  libopenssl-devel
@@ -38,11 +37,6 @@ rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
 mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/ima/digest_lists
 mkdir -p ${RPM_BUILD_ROOT}%{_mandir}/man1
-cd %_builddir/%{name}-%{version}
-txt2man -t %{name} README | gzip > ${RPM_BUILD_ROOT}%{_mandir}/man1/%{name}.1.gz
-cd docs
-for doc in $(ls *.txt); do txt2man -t ${doc%.txt} $doc |
-    gzip > ${RPM_BUILD_ROOT}%{_mandir}/man1/${doc%.txt}.1.gz; done
 
 %post
 ldconfig
