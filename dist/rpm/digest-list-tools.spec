@@ -84,7 +84,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %doc
 %dir /usr/share/digest-list-tools
-%{_datarootdir}/digest-list-tools/README
+%{_datarootdir}/digest-list-tools/README.md
 %{_datarootdir}/digest-list-tools/gen_digest_lists.txt
 %{_datarootdir}/digest-list-tools/setup_ima_digest_lists.txt
 %{_datarootdir}/digest-list-tools/setup_ima_digest_lists_demo.txt

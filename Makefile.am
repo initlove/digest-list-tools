@@ -12,4 +12,4 @@ SUBDIRS = docs \
 EXTRA_DIST = AUTHORS \
 	     CHANGES
 
-dist_pkgdata_DATA = README
+dist_pkgdata_DATA = README.md
