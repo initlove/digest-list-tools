@@ -13,9 +13,7 @@ BuildRequires:  libcap-devel libcmocka-devel
 %if 0%{?suse_version}
 BuildRequires:  libopenssl-devel
 BuildRequires:  linux-glibc-devel keyutils-devel
-%endif
-
-%if 0%{?fedora}
+%else
 BuildRequires:  openssl-devel kernel-headers
 BuildRequires:  keyutils-libs-devel
 %endif
