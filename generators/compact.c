@@ -416,8 +416,10 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			case FTS_F:
 				include_file = 0;
 				statp = ftsent->fts_statp;
-				if (path_list_ext)
+				if (path_list_ext) {
+					st.st_size = statp->st_size;
 					statp = &st;
+				}
 
 				if (include_path && only_executables) {
 					list_for_each_entry(cur_i, head_in,
