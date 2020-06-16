@@ -59,7 +59,7 @@ int write_ima_xattr(int dirfd, char *path, u8 *keyid, size_t keyid_len,
 				xattr_buf, xattr_buf_len, 0);
 	}
 out:
-	if (ret < 0)
+	if (ret < 0 && errno != ENOTSUP)
 		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_IMA, path,
 		       strerror(errno));
 
@@ -78,7 +78,7 @@ int write_evm_xattr(char *path, enum hash_algo algo)
 
 	ret = lsetxattr(path, XATTR_NAME_EVM, &hdr,
 			offsetof(struct signature_v2_hdr, keyid), 0);
-	if (ret < 0)
+	if (ret < 0 && errno != ENOTSUP)
 		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_EVM, path,
 		       strerror(errno));
 
@@ -161,7 +161,7 @@ int gen_write_ima_xattr(u8 *buf, int *buf_len, char *path, u8 algo, u8 *digest,
 		return 0;
 
 	ret = lsetxattr(path, XATTR_NAME_IMA, buf, *buf_len, 0);
-	if (ret < 0)
+	if (ret < 0 && errno != ENOTSUP)
 		printf("Cannot add %s xattr to %s: %s\n", XATTR_NAME_IMA, path,
 		       strerror(errno));
 
