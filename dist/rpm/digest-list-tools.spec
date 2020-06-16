@@ -22,7 +22,7 @@ BuildRequires:  keyutils-libs-devel
 This package includes the tools for configure the IMA Digest Lists extension.
 
 %prep
-%setup -q
+%autosetup -n %{name}-%{version} -p1
 
 %build
 autoreconf -iv
