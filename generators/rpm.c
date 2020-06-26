@@ -476,6 +476,12 @@ int db_generator(int dirfd, int pos, struct list_head *head_in,
 		goto out;
 
 	ts = rpmtsCreate();
+	if (!ts) {
+		rpmlog(RPMLOG_NOTICE, "rpmtsCreate() error..\n");
+		ret = -EACCES;
+		goto out;
+	}
+
 	ret = rpmReadConfigFiles(NULL, NULL);
 	if (ret != RPMRC_OK) {
 		rpmlog(RPMLOG_NOTICE, "Unable to read RPM configuration.\n");
@@ -558,6 +564,10 @@ static int _pkg_generator(int dirfd, int pos, char *path,
 	rpmVSFlags vsflags = 0;
 
 	ts = rpmtsCreate();
+	if (!ts) {
+		rpmlog(RPMLOG_NOTICE, "rpmtsCreate() error..\n");
+		return -EACCES;
+	}
 
 	ret = rpmReadConfigFiles(NULL, NULL);
 	if (ret != RPMRC_OK) {
