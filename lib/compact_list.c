@@ -568,7 +568,7 @@ int digest_list_add_metadata(int dirfd, int fd, char *digest_list_filename,
 		return ret;
 
 	if (!sig_len)
-		return 0;
+		goto out;
 
 	ret = calc_digest(ima_digest, digest_list_buf, digest_list_buf_len,
 			  algo);
