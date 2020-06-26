@@ -85,6 +85,7 @@ struct list_struct *compact_list_init(struct list_head *head,
 			 MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 	if (list->hdr == MAP_FAILED) {
 		printf("Cannot allocate buffer\n");
+		free(list);
 		return NULL;
 	}
 
