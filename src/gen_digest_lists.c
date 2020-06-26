@@ -169,7 +169,7 @@ static void usage(char *progname)
 	       "\t-I <algo>: IMA hash algorithm\n"
 	       "\t-s: sign generated digest lists\n"
 	       "\t-k <key>: key to sign\n"
-	       "\t-w [<key password>]: key password or prompt\n"
+	       "\t-w [<key password>]: key password (- for prompt)\n"
 	       "\t-A <alt root>: alternative root for SELinux labeling\n"
 	       "\t-h: display help\n");
 }
@@ -267,7 +267,7 @@ int main(int argc, char **argv)
 			key_path = optarg;
 			break;
 		case 'w':
-			if (optarg)
+			if (optarg[0] != '-')
 				keypass_ptr = optarg;
 			else
 				keypass_ptr = get_password(keypass,

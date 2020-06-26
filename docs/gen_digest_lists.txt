@@ -40,7 +40,7 @@ OPTIONS
 
 -k <key>: key to sign
 
--w [<key password>]: key password or prompt
+-w [<key password>]: key password (- for prompt)
 
 -A <alt root>: alternative root for SELinux labeling
 
