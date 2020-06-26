@@ -440,11 +440,9 @@ static int parse_options(struct list_head *head_in, bool tlv,
 		}
 	}
 
-	if (output_format) {
-		if (!strcmp(*output_format, "compact") && tlv) {
-			pr_err("Compact TLV must be selected\n");
-			return -EINVAL;
-		}
+	if (!strcmp(*output_format, "compact") && tlv) {
+		pr_err("Compact TLV must be selected\n");
+		return -EINVAL;
 	}
 
 	return 0;
