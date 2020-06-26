@@ -215,7 +215,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'p':
-			pos = atoi(optarg);
+			pos = strtol(optarg, NULL, 10);
 			break;
 		case 't':
 			for (i = 0; i < COMPACT__LAST; i++)

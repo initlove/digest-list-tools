@@ -392,7 +392,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			continue;
 
 		if (path_list_ext) {
-			st.st_mode = atoi(cur->attrs[1]);
+			st.st_mode = strtol(cur->attrs[1], NULL, 10);
 			st.st_uid = 0;
 			pwd = getpwnam(cur->attrs[2]);
 			if (pwd)
