@@ -375,6 +375,7 @@ static int verify_common(struct list_head *head, int dirfd, char *filename,
 	if (memcmp(out + asn1->size, digest, hash_digest_size[algo])) {
 		printf("Verification failed (digest mismatch)\n");
 		ret = -EINVAL;
+		goto out;
 	}
 
 	ret = 0;
