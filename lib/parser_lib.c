@@ -87,9 +87,6 @@ int calc_metadata_digest(int fd, struct list_head *head, u16 type,
 				    obj_label, ima_xattr_len, ima_xattr,
 				    rawvfscap_len, (u8 *)&rawvfscap,
 				    uid, gid, mode);
-	if (ret == -ENOENT)
-		ret = 0;
-
 	free(caps_bin);
 	return ret;
 }
