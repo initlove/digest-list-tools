@@ -134,7 +134,7 @@ static void test_compact_tlv_parser(void **state)
 	assert_return_code(fd, 0);
 
 	ret = write(fd, "0", 1);
-	assert_return_code(fd, 0);
+	assert_return_code(ret, 1);
 
 	close(fd);
 
