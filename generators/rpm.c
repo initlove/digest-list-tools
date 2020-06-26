@@ -577,7 +577,7 @@ static int _pkg_generator(int dirfd, int pos, char *path,
 		rpmlog(RPMLOG_NOTICE, "Failed to open package file %s, %s\n",
 		       path, Fstrerror(fd));
 		ret = -EACCES;
-		goto out_fd;
+		goto out_ts;
 	}
 
 	ret = rpmReadPackageFile(ts, fd, "rpm", &hdr);
