@@ -116,7 +116,7 @@ static int add_file(int dirfd, char *filename, Header *hdr, u16 type,
 
 	if (pgp_algo >= PGP_HASH__LAST) {
 		ret = -EINVAL;
-		goto out;
+		goto out_close;
 	}
 
 	algo = pgp_algo_mapping[pgp_algo];
@@ -293,7 +293,7 @@ out_free_items:
 out_close:
 	fstat(fd, &s);
 	close(fd);
-out:
+
 	compact_list_tlv_free_items(&items);
 	rpmtdFree(filedigestalgo);
 	rpmtdFree(filedigests);
