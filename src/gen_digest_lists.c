@@ -88,8 +88,11 @@ static int process_dir(int dirfd, enum dir_ops op, enum compact_types type,
 			target[ret] = '\0';
 
 			symlink_filename = strdup(digest_lists[0]->d_name);
-			if (!symlink_filename)
-				return -ENOMEM;
+			if (!symlink_filename) {
+				printf("Out of memory\n");
+				ret = -ENOMEM;
+				goto out;
+			}
 
 			free(digest_lists[0]);
 		}
