@@ -294,7 +294,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	if ((op == OP_ADD || op == OP_APPEND) && !input_fmt) {
+	if (op != OP_SIGN && op != OP_REMOVE && !input_fmt) {
 		printf("Input format not specified\n");
 		goto out;
 	}
