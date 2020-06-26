@@ -140,7 +140,7 @@ struct lib *lookup_lib(struct list_head *head, const char *lib_type,
 			 func_name_ptr + 1, lib_type);
 		format_len = func_name_ptr - format;
 	} else {
-		strncpy(function, lib_type, sizeof(function) - 1);
+		snprintf(function, sizeof(function), "%s", lib_type);
 	}
 
 	if (!list_empty(head)) {
