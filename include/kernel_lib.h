@@ -31,6 +31,7 @@
 #else
 #include <linux/byteorder/little_endian.h>
 #endif
+#include <asm/bitsperlong.h>
 
 #include "list.h"
 #include "config.h"
@@ -140,12 +141,10 @@ extern const char *const hash_algo_name[HASH_ALGO__LAST];
 extern const int hash_digest_size[HASH_ALGO__LAST];
 
 /* hash */
-#define BIT_PER_LONG SIZEOF_LONG * 8
-
-#if BIT_PER_LONG == 32
+#if __BITB_PER_LONG == 32
 #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_32
 #define hash_long(val, bits) hash_32(val, bits)
-#elif BIT_PER_LONG == 64
+#elif __BITS_PER_LONG == 64
 #define hash_long(val, bits) hash_64(val, bits)
 #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_64
 #else
@@ -196,7 +195,7 @@ static inline u32 hash32_ptr(const void *ptr)
 {
 	unsigned long val = (unsigned long)ptr;
 
-#if BITS_PER_LONG == 64
+#if __BITS_PER_LONG == 64
 	val ^= (val >> 32);
 #endif
 	return (u32)val;
