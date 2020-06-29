@@ -73,6 +73,8 @@ rm -rf $RPM_BUILD_ROOT
 %exclude /usr/lib64/digestlist/*.la
 %exclude /usr/lib64/libdigestlist-base.a
 %exclude /usr/lib64/libdigestlist-base.la
+%dir %{_includedir}/digestlist
+%{_includedir}/digestlist/*.h
 
 %doc
 %dir /usr/share/digest-list-tools
