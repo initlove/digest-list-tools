@@ -8,5 +8,5 @@ digest_lists_include_HEADERS = kernel_lib.h \
 			       evm.h \
 			       selinux.h \
 			       cap.h \
-			       ima_list.h
+			       ima_list.h \
 			       parser_lib.h
