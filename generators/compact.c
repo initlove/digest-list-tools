@@ -242,7 +242,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	      bool tlv, char *alt_root)
 {
 	char filename[NAME_MAX + 1], *basename = NULL, *link = NULL;
-	char path[PATH_MAX], *path_list = NULL, *data_ptr, *line_ptr, *attr_ptr;
+	char path[PATH_MAX], *path_list = NULL, *data_ptr, *line_ptr;
 	char *path_ptr = NULL, *gen_list_path = NULL;
 	struct list_struct *list = NULL, *list_file = NULL;
 	struct path_struct *cur, *cur_i, *cur_e;
@@ -261,7 +261,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	int include_ima_digests = 0, only_executables = 0, set_ima_xattr = 0;
 	int ret = 0, fd, prefix_len, include_lsm_label = 0, include_file = 0;
 	int path_list_ext = 0, set_evm_xattr = 0;
-	int use_path_list_filename = 0, root_cred = 0, include_path = 0, i;
+	int use_path_list_filename = 0, root_cred = 0, include_path = 0;
 
 	list_for_each_entry(cur, head_in, list) {
 		if (cur->path[1] != ':') {
@@ -310,18 +310,13 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			if (!strlen(line_ptr))
 				continue;
 
-			attr_ptr = line_ptr;
-			i = 0;
-
 			if (path_list_ext) {
-				while (i < ATTR__LAST &&
-				       (attrs[i] = strsep(&attr_ptr, "|")))
-						i++;
-				if (i != ATTR__LAST)
-					continue;
+				parse_file_attrs(line_ptr, attrs);
+				line_ptr = attrs[ATTR_PATH];
 			}
 
-			if (stat(line_ptr, &st) == -1 || !S_ISREG(st.st_mode))
+			if (!line_ptr || stat(line_ptr, &st) == -1 ||
+			    !S_ISREG(st.st_mode))
 				continue;
 
 			snprintf(path, sizeof(path), "I:%s", line_ptr);
@@ -392,13 +387,20 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			continue;
 
 		if (path_list_ext) {
-			st.st_mode = strtol(cur->attrs[1], NULL, 10);
+			pwd = NULL;
+			grp = NULL;
+
+			if (cur->attrs[ATTR_MODE])
+				st.st_mode = strtol(cur->attrs[ATTR_MODE],
+						    NULL, 10);
 			st.st_uid = 0;
-			pwd = getpwnam(cur->attrs[2]);
+			if (cur->attrs[ATTR_UNAME])
+				pwd = getpwnam(cur->attrs[ATTR_UNAME]);
 			if (pwd)
 				st.st_uid = pwd->pw_uid;
 			st.st_gid = 0;
-			grp = getgrnam(cur->attrs[3]);
+			if (cur->attrs[ATTR_GNAME])
+				grp = getgrnam(cur->attrs[ATTR_GNAME]);
 			if (grp)
 				st.st_gid = grp->gr_gid;
 		}
@@ -467,7 +469,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					       gen_list_path != NULL,
 					       include_lsm_label, root_cred,
 					       set_ima_xattr, set_evm_xattr,
-					       alt_root, cur->attrs[4]);
+					       alt_root, cur->attrs[ATTR_CAPS]);
 				if (!ret)
 					unlink = false;
 				if (ret < 0 && ret != -ENOENT &&

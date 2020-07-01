@@ -27,6 +27,16 @@
 
 #include "lib.h"
 
+static const char *file_attrs_str[ATTR__LAST] = {
+	[ATTR_PATH] = "path",
+	[ATTR_DIGESTALGO] = "digestalgo",
+	[ATTR_DIGESTALGOPGP] = "digestalgopgp",
+	[ATTR_DIGEST] = "digest",
+	[ATTR_MODE] = "mode",
+	[ATTR_UNAME] = "uname",
+	[ATTR_GNAME] = "gname",
+	[ATTR_CAPS] = "caps",
+};
 
 static int read_file_from_path_common(int dirfd, const char *path, void **buf,
 				      loff_t *size, bool shared)
@@ -231,6 +241,9 @@ int add_path_struct(char *path, char **attrs, struct list_head *head)
 	if (attrs) {
 		/* skip the path */
 		for (i = 1; i < ATTR__LAST; i++) {
+			if (!attrs[i])
+				continue;
+
 			new->attrs[i] = strdup(attrs[i]);
 			if (!new->attrs[i])
 				goto err;
@@ -279,4 +292,34 @@ void free_path_structs(struct list_head *head)
 		free(cur->path);
 		free(cur);
 	}
+}
+
+int parse_file_attrs(char *str, char **attrs)
+{
+	char *attr_ptr;
+	char *sep;
+	int i;
+
+	for (i = 0; i < ATTR__LAST; i++)
+		attrs[i] = NULL;
+
+	while((attr_ptr = strsep(&str, "|"))) {
+		i = ATTR__LAST;
+		sep = strchr(attr_ptr, '=');
+		if (!sep)
+			continue;
+
+		*sep = '\0';
+		for (i = 0; i < ATTR__LAST; i++) {
+			if (!strcmp(attr_ptr, file_attrs_str[i]))
+				break;
+		}
+
+		if (i == ATTR__LAST)
+			continue;
+
+		attrs[i] = sep + 1;
+	}
+
+	return 0;
 }

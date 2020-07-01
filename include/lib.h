@@ -50,8 +50,8 @@ struct lib *lookup_lib(struct list_head *head, const char *lib_type,
 		       const char *format, int format_len);
 void free_libs(struct list_head *head);
 
-enum file_attrs { ATTR_PATH, ATTR_MODE, ATTR_UNAME, ATTR_GNAME, ATTR_CAPS,
-		  ATTR__LAST };
+enum file_attrs { ATTR_PATH, ATTR_DIGESTALGO, ATTR_DIGESTALGOPGP, ATTR_DIGEST,
+		  ATTR_MODE, ATTR_UNAME, ATTR_GNAME, ATTR_CAPS, ATTR__LAST };
 
 struct path_struct {
 	struct list_head list;
@@ -62,5 +62,6 @@ struct path_struct {
 int add_path_struct(char *path, char **attrs, struct list_head *head);
 void move_path_structs(struct list_head *dest, struct list_head *src);
 void free_path_structs(struct list_head *head);
+int parse_file_attrs(char *str, char **attrs);
 
 #endif /*_LIB_H*/

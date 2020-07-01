@@ -242,7 +242,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	char filename[NAME_MAX + 1];
 	char path[PATH_MAX];
 	char *digest_lists_dir = NULL, *path_list = NULL, *gen_list_path = NULL;
-	char *data_ptr, *line_ptr, *attr_ptr;
+	char *data_ptr, *line_ptr;
 	void *data;
 	loff_t size;
 	time_t t = time(NULL);
@@ -314,18 +314,13 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			if (!strlen(line_ptr))
 				continue;
 
-			attr_ptr = line_ptr;
-			i = 0;
-
 			if (path_list_ext) {
-				while (i < ATTR__LAST &&
-				       (attrs[i] = strsep(&attr_ptr, "|")))
-						i++;
-				if (i < ATTR__LAST)
-					continue;
+				parse_file_attrs(line_ptr, attrs);
+				line_ptr = attrs[ATTR_PATH];
 			}
 
-			if (stat(line_ptr, &st) == -1 || !S_ISREG(st.st_mode))
+			if (!line_ptr || stat(line_ptr, &st) == -1 ||
+			    !S_ISREG(st.st_mode))
 				continue;
 
 			snprintf(path, sizeof(path), "I:%s", line_ptr);
@@ -397,13 +392,20 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 			continue;
 
 		if (path_list_ext) {
-			st.st_mode = strtol(cur->attrs[1], NULL, 10);
+			pwd = NULL;
+			grp = NULL;
+
+			if (cur->attrs[ATTR_MODE])
+				st.st_mode = strtol(cur->attrs[ATTR_MODE],
+						    NULL, 10);
 			st.st_uid = 0;
-			pwd = getpwnam(cur->attrs[2]);
+			if (cur->attrs[ATTR_UNAME])
+				pwd = getpwnam(cur->attrs[ATTR_UNAME]);
 			if (pwd)
 				st.st_uid = pwd->pw_uid;
 			st.st_gid = 0;
-			grp = getgrnam(cur->attrs[3]);
+			if (cur->attrs[ATTR_GNAME])
+				grp = getgrnam(cur->attrs[ATTR_GNAME]);
 			if (grp)
 				st.st_gid = grp->gr_gid;
 		}
@@ -469,7 +471,8 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					list, list_file, algo, ima_algo, tlv,
 					gen_list_path != NULL,
 					include_lsm_label, root_cred, set_ima_xattr,
-					set_evm_xattr, alt_root, cur->attrs[4]);
+					set_evm_xattr, alt_root,
+					cur->attrs[ATTR_CAPS]);
 				if (!ret)
 					unlink = false;
 				else if (ret < 0 && ret != -EEXIST &&
