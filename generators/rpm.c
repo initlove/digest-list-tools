@@ -38,26 +38,6 @@ const unsigned char rpm_header_magic[8] = {
 	0x8e, 0xad, 0xe8, 0x01, 0x00, 0x00, 0x00, 0x00
 };
 
-enum pgp_hash_algo {
-	PGP_HASH_MD5                    = 1,
-	PGP_HASH_SHA1                   = 2,
-	PGP_HASH_RIPE_MD_160            = 3,
-	PGP_HASH_SHA256                 = 8,
-	PGP_HASH_SHA384                 = 9,
-	PGP_HASH_SHA512                 = 10,
-	PGP_HASH_SHA224                 = 11,
-	PGP_HASH__LAST
-};
-
-enum hash_algo pgp_algo_mapping[PGP_HASH__LAST] = {
-	[PGP_HASH_MD5] = HASH_ALGO_MD5,
-	[PGP_HASH_SHA1] = HASH_ALGO_SHA1,
-	[PGP_HASH_SHA224] = HASH_ALGO_SHA224,
-	[PGP_HASH_SHA256] = HASH_ALGO_SHA256,
-	[PGP_HASH_SHA384] = HASH_ALGO_SHA384,
-	[PGP_HASH_SHA512] = HASH_ALGO_SHA512,
-};
-
 static int add_file(int dirfd, char *filename, Header *hdr, u16 type,
 		    u16 modifiers, struct list_head *head_in,
 		    struct list_head *head_out, enum hash_algo algo,

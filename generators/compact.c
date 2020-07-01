@@ -38,7 +38,8 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 		    struct list_struct *list_file, enum hash_algo algo,
 		    enum hash_algo ima_algo, bool tlv, bool gen_list,
 		    bool include_lsm_label, bool root_cred, bool set_ima_xattr,
-		    bool set_evm_xattr, char *alt_root, char *caps)
+		    bool set_evm_xattr, char *alt_root, char *caps,
+		    char *file_digest)
 {
 	cap_t c;
 	u8 ima_xattr[2048];
@@ -75,10 +76,14 @@ static int add_file(int dirfd, int fd, char *path, u16 type, u16 modifiers,
 	    st->st_size)
 		modifiers |= (1 << COMPACT_MOD_IMMUTABLE);
 
-	ret = calc_file_digest(digest, -1, path, algo);
-	if (ret < 0) {
-		printf("Cannot calculate digest of %s\n", path);
-		goto out;
+	if (!file_digest) {
+		ret = calc_file_digest(digest, -1, path, algo);
+		if (ret < 0) {
+			printf("Cannot calculate digest of %s\n", path);
+			goto out;
+		}
+	} else {
+		hex2bin(digest, file_digest, hash_digest_size[algo]);
 	}
 
 	if (type == COMPACT_METADATA || tlv) {
@@ -257,6 +262,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 	char *attrs[ATTR__LAST];
 	struct passwd *pwd;
 	struct group *grp;
+	enum hash_algo list_algo;
 	int fts_flags = (FTS_PHYSICAL | FTS_COMFOLLOW | FTS_NOCHDIR | FTS_XDEV);
 	int include_ima_digests = 0, only_executables = 0, set_ima_xattr = 0;
 	int ret = 0, fd, prefix_len, include_lsm_label = 0, include_file = 0;
@@ -389,6 +395,7 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 		if (path_list_ext) {
 			pwd = NULL;
 			grp = NULL;
+			list_algo = algo;
 
 			if (cur->attrs[ATTR_MODE])
 				st.st_mode = strtol(cur->attrs[ATTR_MODE],
@@ -403,6 +410,16 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 				grp = getgrnam(cur->attrs[ATTR_GNAME]);
 			if (grp)
 				st.st_gid = grp->gr_gid;
+			if (cur->attrs[ATTR_DIGESTALGO])
+				list_algo = strtol(cur->attrs[ATTR_DIGESTALGO],
+						   NULL, 10);
+			if (cur->attrs[ATTR_DIGESTALGOPGP]) {
+				list_algo = pgp_algo_mapping[strtol(
+						cur->attrs[ATTR_DIGESTALGOPGP],
+						NULL, 10)];
+			}
+			if (list_algo != algo)
+				continue;
 		}
 
 		paths[0] = &cur->path[2];
@@ -469,7 +486,8 @@ int generator(int dirfd, int pos, struct list_head *head_in,
 					       gen_list_path != NULL,
 					       include_lsm_label, root_cred,
 					       set_ima_xattr, set_evm_xattr,
-					       alt_root, cur->attrs[ATTR_CAPS]);
+					       alt_root, cur->attrs[ATTR_CAPS],
+					       cur->attrs[ATTR_DIGEST]);
 				if (!ret)
 					unlink = false;
 				if (ret < 0 && ret != -ENOENT &&

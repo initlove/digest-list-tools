@@ -33,6 +33,19 @@
 #define SECURITYFS_PATH SYSFS_PATH "/kernel/security"
 #define IMA_SECURITYFS_PATH SECURITYFS_PATH "/ima"
 
+enum pgp_hash_algo {
+	PGP_HASH_MD5			= 1,
+	PGP_HASH_SHA1			= 2,
+	PGP_HASH_RIPE_MD_160		= 3,
+	PGP_HASH_SHA256			= 8,
+	PGP_HASH_SHA384			= 9,
+	PGP_HASH_SHA512			= 10,
+	PGP_HASH_SHA224			= 11,
+	PGP_HASH__LAST
+};
+
+enum hash_algo pgp_algo_mapping[PGP_HASH__LAST];
+
 int read_file_from_path(int dirfd, const char *path, void **buf, loff_t *size);
 int read_write_file_from_path(int dirfd, const char *path, void **buf,
 			      loff_t *size);

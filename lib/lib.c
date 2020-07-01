@@ -38,6 +38,15 @@ static const char *file_attrs_str[ATTR__LAST] = {
 	[ATTR_CAPS] = "caps",
 };
 
+enum hash_algo pgp_algo_mapping[PGP_HASH__LAST] = {
+	[PGP_HASH_MD5] = HASH_ALGO_MD5,
+	[PGP_HASH_SHA1] = HASH_ALGO_SHA1,
+	[PGP_HASH_SHA224] = HASH_ALGO_SHA224,
+	[PGP_HASH_SHA256] = HASH_ALGO_SHA256,
+	[PGP_HASH_SHA384] = HASH_ALGO_SHA384,
+	[PGP_HASH_SHA512] = HASH_ALGO_SHA512,
+};
+
 static int read_file_from_path_common(int dirfd, const char *path, void **buf,
 				      loff_t *size, bool shared)
 {
