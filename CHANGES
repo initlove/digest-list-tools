@@ -1,3 +1,8 @@
+2020-07-02  Roberto Sassu <roberto.sassu@huawei.com>
+	version 0.3.92
+	* Bug fixes
+	* Change format of file list for compact/unknown generators
+
 2020-06-02  Roberto Sassu <roberto.sassu@huawei.com>
 	version 0.3.91
 	* Bug fixes
