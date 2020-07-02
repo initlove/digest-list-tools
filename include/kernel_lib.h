@@ -34,7 +34,6 @@
 #include <asm/bitsperlong.h>
 
 #include "list.h"
-#include "config.h"
 
 /* kernel types */
 typedef u_int8_t u8;
